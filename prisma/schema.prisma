@@ -1,0 +1,343 @@
+// Resource Ledger — data model
+//
+// Design notes:
+// - Every business row carries tenantId. Isolation is enforced in the data layer.
+// - Money is stored as whole units in BigInt. Convert to Number at the UI boundary.
+// - Posted shipments are immutable. Corrections are done by voiding + rebooking.
+// - Inventory is tracked as supplier-attributed lots, consumed FIFO, so every
+//   supplier credit can be traced to the exact units that were sold.
+// - This schema deliberately avoids Postgres-only features (enums, arrays, Decimal)
+//   so it can run on SQLite in development and Postgres in production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  passwordHash    String
+  isPlatformAdmin Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  memberships     Membership[]
+  sessions        Session[]
+  invitesSent     Invite[]     @relation("InviteSender")
+  invitesAccepted Invite[]     @relation("InviteAcceptor")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  currency  String   @default("Credits")
+  createdAt DateTime @default(now())
+
+  memberships Membership[]
+  resources   Resource[]
+  suppliers   Supplier[]
+  levels      TradingPostLevel[]
+  deliveries  Delivery[]
+  lots        Lot[]
+  shipments   Shipment[]
+  ledger      SupplierLedgerEntry[]
+  payments    Payment[]
+  invites     Invite[]
+  auditLogs   AuditLog[]
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      String   @default("seller") // owner | seller
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Resource {
+  id                String   @id @default(cuid())
+  tenantId          String
+  name              String
+  unitLabel         String   @default("units")
+  unitPrice         BigInt   @default(0)
+  lowStockThreshold BigInt   @default(0)
+  sortOrder         Int      @default(0)
+  archived          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries  Delivery[]
+  lots        Lot[]
+  lines       ShipmentLine[]
+  tripItems   TripItem[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Supplier {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  shareBps   Int      @default(5000) // basis points: 5000 = 50.00%
+  shareBasis String   @default("gross") // gross | net (reserved)
+  contact    String?
+  notes      String?
+  archived   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries   Delivery[]
+  lots         Lot[]
+  consumptions LotConsumption[]
+  ledger       SupplierLedgerEntry[]
+  payments     Payment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model TradingPostLevel {
+  id             String  @id @default(cuid())
+  tenantId       String
+  level          Int
+  maxCargoValue  BigInt
+  taxRateBps     Int     @default(0) // basis points: 2350 = 23.50%
+  flatFee        BigInt  @default(0)
+  minTax         BigInt  @default(0)
+  notes          String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, level])
+  @@index([tenantId])
+}
+
+model Delivery {
+  id         String   @id @default(cuid())
+  tenantId   String
+  supplierId String
+  resourceId String
+  quantity   BigInt
+  unitCost   BigInt   @default(0)
+  receivedAt DateTime
+  note       String?
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  resource Resource @relation(fields: [resourceId], references: [id])
+  lots     Lot[]
+
+  @@index([tenantId, receivedAt])
+  @@index([tenantId, supplierId])
+  @@index([tenantId, resourceId])
+}
+
+model Lot {
+  id                String   @id @default(cuid())
+  tenantId          String
+  deliveryId        String?
+  supplierId        String
+  resourceId        String
+  quantityReceived  BigInt
+  quantityRemaining BigInt
+  receivedAt        DateTime
+  createdAt         DateTime @default(now())
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  delivery     Delivery?        @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  supplier     Supplier         @relation(fields: [supplierId], references: [id])
+  resource     Resource         @relation(fields: [resourceId], references: [id])
+  consumptions LotConsumption[]
+
+  @@index([tenantId, resourceId, receivedAt])
+  @@index([tenantId, supplierId])
+}
+
+model Shipment {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  reference          String
+  customerName       String
+  soldAt             DateTime
+  status             String    @default("draft") // draft | posted | void
+  notes              String?
+  grossTotal         BigInt    @default(0)
+  taxTotal           BigInt    @default(0)
+  netTotal           BigInt    @default(0)
+  supplierShareTotal BigInt    @default(0)
+  createdAt          DateTime  @default(now())
+  postedAt           DateTime?
+  voidedAt           DateTime?
+  voidReason         String?
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trips        Trip[]
+  lines        ShipmentLine[]
+  consumptions LotConsumption[]
+
+  @@unique([tenantId, reference])
+  @@index([tenantId, soldAt])
+  @@index([tenantId, status])
+}
+
+model Trip {
+  id         String @id @default(cuid())
+  shipmentId String
+  seq        Int
+  level      Int
+  capacity   BigInt
+  cargoValue BigInt
+  tax        BigInt
+
+  shipment Shipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  items    TripItem[]
+
+  @@index([shipmentId])
+}
+
+model TripItem {
+  id         String @id @default(cuid())
+  tripId     String
+  resourceId String
+  quantity   BigInt
+  unitPrice  BigInt
+  value      BigInt
+
+  trip     Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id])
+
+  @@index([tripId])
+}
+
+model ShipmentLine {
+  id         String @id @default(cuid())
+  shipmentId String
+  resourceId String
+  quantity   BigInt
+  unitPrice  BigInt
+  lineTotal  BigInt
+
+  shipment     Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  resource     Resource         @relation(fields: [resourceId], references: [id])
+  consumptions LotConsumption[]
+
+  @@index([shipmentId])
+}
+
+model LotConsumption {
+  id             String @id @default(cuid())
+  shipmentId     String
+  shipmentLineId String
+  lotId          String
+  supplierId     String
+  quantity       BigInt
+  unitPrice      BigInt
+  shareBps       Int
+  shareAmount    BigInt
+
+  shipment Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  line     ShipmentLine @relation(fields: [shipmentLineId], references: [id], onDelete: Cascade)
+  lot      Lot          @relation(fields: [lotId], references: [id])
+  supplier Supplier     @relation(fields: [supplierId], references: [id])
+
+  @@index([shipmentId])
+  @@index([supplierId])
+}
+
+model SupplierLedgerEntry {
+  id         String   @id @default(cuid())
+  tenantId   String
+  supplierId String
+  type       String // credit | payment | adjustment | reversal
+  amount     BigInt // signed: credit +, payment -
+  refType    String? // shipment | payment | manual
+  refId      String?
+  occurredAt DateTime
+  note       String?
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([tenantId, supplierId, occurredAt])
+  @@index([refType, refId])
+}
+
+model Payment {
+  id         String    @id @default(cuid())
+  tenantId   String
+  supplierId String
+  amount     BigInt
+  method     String    @default("cash")
+  paidAt     DateTime
+  note       String?
+  voidedAt   DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([tenantId, paidAt])
+  @@index([tenantId, supplierId])
+}
+
+model Invite {
+  id             String    @id @default(cuid())
+  tenantId       String
+  email          String
+  token          String    @unique
+  status         String    @default("pending") // pending | accepted | revoked
+  tenantName     String?
+  createdById    String
+  acceptedUserId String?
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("InviteSender", fields: [createdById], references: [id])
+  acceptedBy  User?  @relation("InviteAcceptor", fields: [acceptedUserId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([email])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
