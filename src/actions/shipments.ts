@@ -1,5 +1,6 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -34,6 +35,36 @@ export type CreateShipmentResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
 
+const REFERENCE_PATTERN = /^S-(\d+)$/;
+
+/**
+ * Next reference is one past the highest number already used, so voided
+ * shipments never have their number reused. Concurrent posts can still pick
+ * the same number; createShipmentAction retries on the unique conflict.
+ */
+async function nextShipmentReference(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+): Promise<string> {
+  const rows = await tx.shipment.findMany({
+    where: { tenantId },
+    select: { reference: true },
+  });
+  const highest = rows.reduce((max, row) => {
+    const match = REFERENCE_PATTERN.exec(row.reference);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `S-${String(highest + 1).padStart(4, "0")}`;
+}
+
+function isReferenceConflict(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+  const target = error.meta?.target;
+  return Array.isArray(target) ? target.includes("reference") : true;
+}
+
 export async function createShipmentAction(
   input: CreateShipmentInput,
 ): Promise<CreateShipmentResult> {
@@ -49,228 +80,234 @@ export async function createShipmentAction(
   const soldAt = parseDateInput(data.soldAt);
   if (!soldAt) return { ok: false, error: "Choose a valid sale date." };
 
-  try {
-    const shipmentId = await prisma.$transaction(
-      async (tx) => {
-        const level = await tx.tradingPostLevel.findUnique({
-          where: { tenantId_level: { tenantId, level: data.level } },
-        });
-        if (!level) {
-          throw new ActionError(`Trading post level ${data.level} is not configured.`);
-        }
+  const MAX_ATTEMPTS = 3;
 
-        const resourceIds = [...new Set(data.lines.map((line) => line.resourceId))];
-        const resources = await tx.resource.findMany({
-          where: { tenantId, id: { in: resourceIds }, archived: false },
-        });
-        const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
-        if (resourceMap.size !== resourceIds.length) {
-          throw new ActionError("One of the selected resources is no longer available.");
-        }
-
-        const planLines: PlanLine[] = data.lines.map((line) => {
-          const resource = resourceMap.get(line.resourceId)!;
-          return {
-            resourceId: line.resourceId,
-            name: resource.name,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-          };
-        });
-
-        const planned = planShipment(planLines, {
-          level: level.level,
-          maxCargoValue: toNumber(level.maxCargoValue),
-          taxRateBps: level.taxRateBps,
-          flatFee: toNumber(level.flatFee),
-          minTax: toNumber(level.minTax),
-        });
-        if (!planned.ok) throw new ActionError(planned.error);
-        const plan = planned.plan;
-
-        const stockRows = await tx.lot.groupBy({
-          by: ["resourceId"],
-          where: { tenantId, resourceId: { in: resourceIds } },
-          _sum: { quantityRemaining: true },
-        });
-        const stockMap = new Map(
-          stockRows.map((row) => [row.resourceId, toNumber(row._sum.quantityRemaining)]),
-        );
-
-        for (const line of data.lines) {
-          const available = stockMap.get(line.resourceId) ?? 0;
-          if (line.quantity > available) {
-            throw new ActionError(
-              `Not enough ${resourceMap.get(line.resourceId)!.name}: need ${line.quantity}, have ${available}.`,
-            );
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const shipmentId = await prisma.$transaction(
+        async (tx) => {
+          const level = await tx.tradingPostLevel.findUnique({
+            where: { tenantId_level: { tenantId, level: data.level } },
+          });
+          if (!level) {
+            throw new ActionError(`Trading post level ${data.level} is not configured.`);
           }
-        }
 
-        const count = await tx.shipment.count({ where: { tenantId } });
-        const reference = `S-${String(count + 1).padStart(4, "0")}`;
+          const resourceIds = [...new Set(data.lines.map((line) => line.resourceId))];
+          const resources = await tx.resource.findMany({
+            where: { tenantId, id: { in: resourceIds }, archived: false },
+          });
+          const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
+          if (resourceMap.size !== resourceIds.length) {
+            throw new ActionError("One of the selected resources is no longer available.");
+          }
 
-        const shipment = await tx.shipment.create({
-          data: {
-            tenantId,
-            reference,
-            customerName: data.customerName,
-            soldAt,
-            notes: data.notes?.trim() || null,
-            status: "draft",
-          },
-        });
-
-        const suppliers = await tx.supplier.findMany({ where: { tenantId } });
-        const supplierMap = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
-        const credits = new Map<string, number>();
-
-        for (const line of data.lines) {
-          const resource = resourceMap.get(line.resourceId)!;
-          const lineTotal = line.quantity * line.unitPrice;
-
-          const createdLine = await tx.shipmentLine.create({
-            data: {
-              shipmentId: shipment.id,
+          const planLines: PlanLine[] = data.lines.map((line) => {
+            const resource = resourceMap.get(line.resourceId)!;
+            return {
               resourceId: line.resourceId,
+              name: resource.name,
               quantity: line.quantity,
               unitPrice: line.unitPrice,
-              lineTotal,
-            },
+            };
           });
 
-          let need = line.quantity;
-          const lots = await tx.lot.findMany({
-            where: {
-              tenantId,
-              resourceId: line.resourceId,
-              quantityRemaining: { gt: 0 },
-            },
-            orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+          const planned = planShipment(planLines, {
+            level: level.level,
+            maxCargoValue: toNumber(level.maxCargoValue),
+            taxRateBps: level.taxRateBps,
+            flatFee: toNumber(level.flatFee),
+            minTax: toNumber(level.minTax),
           });
+          if (!planned.ok) throw new ActionError(planned.error);
+          const plan = planned.plan;
 
-          for (const lot of lots) {
-            if (need <= 0) break;
-            const take = Math.min(need, toNumber(lot.quantityRemaining));
-            if (take <= 0) continue;
+          const stockRows = await tx.lot.groupBy({
+            by: ["resourceId"],
+            where: { tenantId, resourceId: { in: resourceIds } },
+            _sum: { quantityRemaining: true },
+          });
+          const stockMap = new Map(
+            stockRows.map((row) => [row.resourceId, toNumber(row._sum.quantityRemaining)]),
+          );
 
-            const supplier = supplierMap.get(lot.supplierId);
-            if (!supplier) {
-              throw new ActionError("A supplier attached to this stock no longer exists.");
+          for (const line of data.lines) {
+            const available = stockMap.get(line.resourceId) ?? 0;
+            if (line.quantity > available) {
+              throw new ActionError(
+                `Not enough ${resourceMap.get(line.resourceId)!.name}: need ${line.quantity}, have ${available}.`,
+              );
             }
+          }
 
-            const shareAmount = floorBps(take * line.unitPrice, supplier.shareBps);
+          const reference = await nextShipmentReference(tx, tenantId);
 
-            await tx.lot.update({
-              where: { id: lot.id },
-              data: { quantityRemaining: { decrement: take } },
-            });
+          const shipment = await tx.shipment.create({
+            data: {
+              tenantId,
+              reference,
+              customerName: data.customerName,
+              soldAt,
+              notes: data.notes?.trim() || null,
+              status: "draft",
+            },
+          });
 
-            await tx.lotConsumption.create({
+          const suppliers = await tx.supplier.findMany({ where: { tenantId } });
+          const supplierMap = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
+          const credits = new Map<string, number>();
+
+          for (const line of data.lines) {
+            const resource = resourceMap.get(line.resourceId)!;
+            const lineTotal = line.quantity * line.unitPrice;
+
+            const createdLine = await tx.shipmentLine.create({
               data: {
                 shipmentId: shipment.id,
-                shipmentLineId: createdLine.id,
-                lotId: lot.id,
-                supplierId: lot.supplierId,
-                quantity: take,
+                resourceId: line.resourceId,
+                quantity: line.quantity,
                 unitPrice: line.unitPrice,
-                shareBps: supplier.shareBps,
-                shareAmount,
+                lineTotal,
               },
             });
 
-            credits.set(lot.supplierId, (credits.get(lot.supplierId) ?? 0) + shareAmount);
-            need -= take;
+            let need = line.quantity;
+            const lots = await tx.lot.findMany({
+              where: {
+                tenantId,
+                resourceId: line.resourceId,
+                quantityRemaining: { gt: 0 },
+              },
+              orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+            });
+
+            for (const lot of lots) {
+              if (need <= 0) break;
+              const take = Math.min(need, toNumber(lot.quantityRemaining));
+              if (take <= 0) continue;
+
+              const supplier = supplierMap.get(lot.supplierId);
+              if (!supplier) {
+                throw new ActionError("A supplier attached to this stock no longer exists.");
+              }
+
+              const shareAmount = floorBps(take * line.unitPrice, supplier.shareBps);
+
+              await tx.lot.update({
+                where: { id: lot.id },
+                data: { quantityRemaining: { decrement: take } },
+              });
+
+              await tx.lotConsumption.create({
+                data: {
+                  shipmentId: shipment.id,
+                  shipmentLineId: createdLine.id,
+                  lotId: lot.id,
+                  supplierId: lot.supplierId,
+                  quantity: take,
+                  unitPrice: line.unitPrice,
+                  shareBps: supplier.shareBps,
+                  shareAmount,
+                },
+              });
+
+              credits.set(lot.supplierId, (credits.get(lot.supplierId) ?? 0) + shareAmount);
+              need -= take;
+            }
+
+            if (need > 0) {
+              throw new ActionError(
+                `Stock for ${resource.name} changed while planning. Refresh and try again.`,
+              );
+            }
           }
 
-          if (need > 0) {
-            throw new ActionError(
-              `Stock for ${resource.name} changed while planning. Refresh and try again.`,
-            );
-          }
-        }
-
-        for (const trip of plan.trips) {
-          const createdTrip = await tx.trip.create({
-            data: {
-              shipmentId: shipment.id,
-              seq: trip.seq,
-              level: trip.level,
-              capacity: trip.capacity,
-              cargoValue: trip.cargoValue,
-              tax: trip.tax,
-            },
-          });
-
-          for (const item of trip.items) {
-            await tx.tripItem.create({
+          for (const trip of plan.trips) {
+            const createdTrip = await tx.trip.create({
               data: {
-                tripId: createdTrip.id,
-                resourceId: item.resourceId,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                value: item.value,
+                shipmentId: shipment.id,
+                seq: trip.seq,
+                level: trip.level,
+                capacity: trip.capacity,
+                cargoValue: trip.cargoValue,
+                tax: trip.tax,
+              },
+            });
+
+            for (const item of trip.items) {
+              await tx.tripItem.create({
+                data: {
+                  tripId: createdTrip.id,
+                  resourceId: item.resourceId,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  value: item.value,
+                },
+              });
+            }
+          }
+
+          let supplierShareTotal = 0;
+          for (const [supplierId, amount] of credits) {
+            supplierShareTotal += amount;
+            if (amount <= 0) continue;
+            await tx.supplierLedgerEntry.create({
+              data: {
+                tenantId,
+                supplierId,
+                type: "credit",
+                amount,
+                refType: "shipment",
+                refId: shipment.id,
+                occurredAt: soldAt,
+                note: `Shipment ${reference}`,
               },
             });
           }
-        }
 
-        let supplierShareTotal = 0;
-        for (const [supplierId, amount] of credits) {
-          supplierShareTotal += amount;
-          if (amount <= 0) continue;
-          await tx.supplierLedgerEntry.create({
+          await tx.shipment.update({
+            where: { id: shipment.id },
             data: {
-              tenantId,
-              supplierId,
-              type: "credit",
-              amount,
-              refType: "shipment",
-              refId: shipment.id,
-              occurredAt: soldAt,
-              note: `Shipment ${reference}`,
+              status: "posted",
+              postedAt: new Date(),
+              grossTotal: plan.gross,
+              taxTotal: plan.tax,
+              netTotal: plan.net,
+              supplierShareTotal,
             },
           });
-        }
 
-        await tx.shipment.update({
-          where: { id: shipment.id },
-          data: {
-            status: "posted",
-            postedAt: new Date(),
-            grossTotal: plan.gross,
-            taxTotal: plan.tax,
-            netTotal: plan.net,
-            supplierShareTotal,
-          },
-        });
+          await logAudit(tx, {
+            tenantId,
+            userId: session.user.id,
+            action: "shipment.posted",
+            entity: "shipment",
+            entityId: shipment.id,
+            detail: `${reference} · ${data.customerName} · gross ${plan.gross} · tax ${plan.tax} · net ${plan.net}`,
+          });
 
-        await logAudit(tx, {
-          tenantId,
-          userId: session.user.id,
-          action: "shipment.posted",
-          entity: "shipment",
-          entityId: shipment.id,
-          detail: `${reference} · ${data.customerName} · gross ${plan.gross} · tax ${plan.tax} · net ${plan.net}`,
-        });
+          return shipment.id;
+        },
+        { timeout: 20_000 },
+      );
 
-        return shipment.id;
-      },
-      { timeout: 20_000 },
-    );
+      revalidatePath("/");
+      revalidatePath("/shipments");
+      revalidatePath("/inventory");
+      revalidatePath("/suppliers");
 
-    revalidatePath("/");
-    revalidatePath("/shipments");
-    revalidatePath("/inventory");
-    revalidatePath("/suppliers");
-
-    return { ok: true, id: shipmentId };
-  } catch (error) {
-    if (error instanceof ActionError) {
-      return { ok: false, error: error.message };
+      return { ok: true, id: shipmentId };
+    } catch (error) {
+      if (error instanceof ActionError) {
+        return { ok: false, error: error.message };
+      }
+      if (isReferenceConflict(error) && attempt < MAX_ATTEMPTS) continue;
+      console.error("createShipmentAction", error);
+      return { ok: false, error: "Could not post the shipment. Please try again." };
     }
-    console.error("createShipmentAction", error);
-    return { ok: false, error: "Could not post the shipment. Please try again." };
   }
+
+  return { ok: false, error: "Could not post the shipment. Please try again." };
 }
 
 export async function voidShipmentAction(formData: FormData): Promise<void> {

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import {
+  changePasswordAction,
   saveLevelsAction,
   updateResourceAction,
   updateWorkspaceAction,
@@ -40,6 +41,53 @@ export function WorkspaceForm({ name, currency }: { name: string; currency: stri
 
       <Button type="submit" variant="secondary" className="w-full" disabled={pending}>
         {pending ? "Saving…" : "Save workspace"}
+      </Button>
+    </form>
+  );
+}
+
+export function PasswordForm() {
+  const [state, formAction, pending] = useActionState<FormState, FormData>(
+    changePasswordAction,
+    {},
+  );
+
+  return (
+    <form action={formAction} className="space-y-3">
+      {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
+      {state.success ? <Alert tone="success">{state.success}</Alert> : null}
+
+      <Field label="Current password">
+        <Input
+          name="currentPassword"
+          type="password"
+          autoComplete="current-password"
+          required
+        />
+      </Field>
+      <Field label="New password" hint="At least 8 characters.">
+        <Input
+          name="newPassword"
+          type="password"
+          autoComplete="new-password"
+          minLength={8}
+          maxLength={200}
+          required
+        />
+      </Field>
+      <Field label="Confirm new password">
+        <Input
+          name="confirmPassword"
+          type="password"
+          autoComplete="new-password"
+          minLength={8}
+          maxLength={200}
+          required
+        />
+      </Field>
+
+      <Button type="submit" variant="secondary" className="w-full" disabled={pending}>
+        {pending ? "Updating…" : "Update password"}
       </Button>
     </form>
   );

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { hashPassword, requireSession, verifyPassword } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { parseAmountInput, parsePercentInput } from "@/lib/money";
 
@@ -28,6 +28,53 @@ export async function updateWorkspaceAction(
   revalidatePath("/");
   revalidatePath("/settings");
   return { success: "Workspace updated." };
+}
+
+export async function changePasswordAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const session = await requireSession();
+  const current = String(formData.get("currentPassword") ?? "");
+  const next = String(formData.get("newPassword") ?? "");
+  const confirm = String(formData.get("confirmPassword") ?? "");
+
+  if (!current) return { error: "Enter your current password." };
+  if (next.length < 8) return { error: "New password must be at least 8 characters." };
+  if (next.length > 200) return { error: "New password is too long." };
+  if (next !== confirm) return { error: "New passwords do not match." };
+  if (next === current) return { error: "Choose a password different from your current one." };
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { passwordHash: true },
+  });
+  if (!user) return { error: "Account not found." };
+  if (!(await verifyPassword(current, user.passwordHash))) {
+    return { error: "Current password is incorrect." };
+  }
+
+  const passwordHash = await hashPassword(next);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: session.user.id },
+      data: { passwordHash },
+    });
+    await tx.session.deleteMany({
+      where: { userId: session.user.id, NOT: { id: session.sessionId } },
+    });
+    await logAudit(tx, {
+      tenantId: session.tenant.id,
+      userId: session.user.id,
+      action: "password.changed",
+      entity: "user",
+      entityId: session.user.id,
+    });
+  });
+
+  revalidatePath("/settings");
+  return { success: "Password updated. Other sessions have been signed out." };
 }
 
 export async function updateResourceAction(

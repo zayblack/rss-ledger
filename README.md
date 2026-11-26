@@ -17,7 +17,7 @@ sellers — each gets a fully isolated workspace.
 npm install
 cp .env.example .env          # DATABASE_URL="file:./dev.db"
 npm run db:push               # create the SQLite database
-npm run db:seed               # seed the owner + placeholder data
+npm run db:seed               # seed the owner + starter resources/levels
 npm run dev                   # http://localhost:3000
 ```
 
@@ -26,7 +26,11 @@ Sign in with the seeded owner:
 - Email: `owner@example.com`
 - Password: `ledger123`
 
-**Change these in Settings → or re-run the seed with a new owner before onboarding.**
+**Change the password in Settings → Security, or re-run the seed with a new owner before onboarding.**
+
+The seed creates the owner and starter resources/levels only. To try the app with
+sample suppliers, stock, and a posted shipment, use the dashboard's **Load demo
+data** button on an empty workspace.
 
 ## Scripts
 
@@ -37,7 +41,7 @@ Sign in with the seeded owner:
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run check` | Regression checks for the money + packing engine |
 | `npm run db:push` | Push the Prisma schema to the database |
-| `npm run db:seed` | Seed owner, resources, trading post levels, demo data |
+| `npm run db:seed` | Seed owner, resources, and trading post levels |
 | `npm run db:studio` | Open Prisma Studio |
 
 ## Switching to Postgres
@@ -102,5 +106,3 @@ src/lib/         db, money, calc, format, auth, audit, defaults
 src/components/  UI primitives + shell
 scripts/         check-calc.ts (regression checks)
 ```
-EOF
-echo written

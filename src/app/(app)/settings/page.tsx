@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { toNumber } from "@/lib/money";
 import { Alert, Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
-import { LevelsEditor, ResourceForm, WorkspaceForm } from "./forms";
+import { LevelsEditor, PasswordForm, ResourceForm, WorkspaceForm } from "./forms";
 
 export const metadata = { title: "Settings" };
 
@@ -50,6 +50,18 @@ export default async function SettingsPage() {
               Sales consume the oldest supplier lots first (FIFO). Changing a supplier&apos;s share
               never rewrites past statements.
             </Alert>
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.4fr] lg:items-start">
+        <Card>
+          <CardHeader
+            title="Security"
+            subtitle="Change the password for your account. Other sessions will be signed out."
+          />
+          <CardBody className="pt-3">
+            <PasswordForm />
           </CardBody>
         </Card>
       </div>
