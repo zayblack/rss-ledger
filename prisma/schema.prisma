@@ -77,6 +77,16 @@ model Session {
   @@index([userId])
 }
 
+/// Failed sign-in attempts, keyed by email or IP. Pre-auth, so no tenant relation.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+  @@index([createdAt])
+}
+
 model Resource {
   id                String   @id @default(cuid())
   tenantId          String

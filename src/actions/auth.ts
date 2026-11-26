@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { createSession, destroySession, hashPassword, verifyPassword } from "@/lib/auth";
@@ -7,6 +8,33 @@ import { copyTemplateToTenant } from "@/lib/defaults";
 import { logAudit } from "@/lib/audit";
 
 export type AuthState = { error?: string };
+
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const EMAIL_ATTEMPT_LIMIT = 8;
+const IP_ATTEMPT_LIMIT = 30;
+
+async function clientIp(): Promise<string | null> {
+  const headerList = await headers();
+  const forwarded = headerList.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return headerList.get("x-real-ip")?.trim() || null;
+}
+
+async function countRecentAttempts(key: string): Promise<number> {
+  return prisma.loginAttempt.count({
+    where: { key, createdAt: { gte: new Date(Date.now() - RATE_WINDOW_MS) } },
+  });
+}
+
+async function recordFailedAttempt(keys: string[]): Promise<void> {
+  await prisma.loginAttempt.createMany({ data: keys.map((key) => ({ key })) });
+  await prisma.loginAttempt.deleteMany({
+    where: { key: { in: keys }, createdAt: { lt: new Date(Date.now() - RATE_WINDOW_MS) } },
+  });
+}
 
 export async function loginAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -16,10 +44,28 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
     return { error: "Enter your email and password." };
   }
 
+  const emailKey = `email:${email}`;
+  const ip = await clientIp();
+  const keys = ip ? [emailKey, `ip:${ip}`] : [emailKey];
+
+  const attempts = await Promise.all(keys.map((key) => countRecentAttempts(key)));
+  const emailAttempts = attempts[0] ?? 0;
+  const ipAttempts = keys.length > 1 ? attempts[1] ?? 0 : 0;
+
+  if (emailAttempts >= EMAIL_ATTEMPT_LIMIT || ipAttempts >= IP_ATTEMPT_LIMIT) {
+    return { error: "Too many sign-in attempts. Try again in a few minutes." };
+  }
+
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    await recordFailedAttempt(keys);
     return { error: "Invalid email or password." };
   }
+
+  await prisma.loginAttempt.deleteMany({ where: { key: { in: keys } } });
+  await prisma.loginAttempt.deleteMany({
+    where: { createdAt: { lt: new Date(Date.now() - RATE_WINDOW_MS) } },
+  });
 
   await createSession(user.id);
   redirect("/");
@@ -75,8 +121,9 @@ export async function acceptInviteAction(_prev: AuthState, formData: FormData): 
       },
     });
 
+    // Each invitee owns their own isolated workspace and can invite others.
     await tx.membership.create({
-      data: { userId: user.id, tenantId: tenant.id, role: "seller" },
+      data: { userId: user.id, tenantId: tenant.id, role: "owner" },
     });
 
     await copyTemplateToTenant(tx, invite.tenantId, tenant.id);

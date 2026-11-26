@@ -7,6 +7,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { planShipment, type PlanLine } from "@/lib/calc";
+import { nextShipmentReference } from "@/lib/references";
 import { floorBps, toNumber } from "@/lib/money";
 import { logAudit } from "@/lib/audit";
 import { parseDateInput } from "@/lib/format";
@@ -35,14 +36,12 @@ export type CreateShipmentResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
 
-const REFERENCE_PATTERN = /^S-(\d+)$/;
-
 /**
- * Next reference is one past the highest number already used, so voided
- * shipments never have their number reused. Concurrent posts can still pick
- * the same number; createShipmentAction retries on the unique conflict.
+ * Reads the tenant's existing references and delegates the numbering rule to
+ * the pure helper. Concurrent posts can still pick the same number;
+ * createShipmentAction retries on the unique conflict.
  */
-async function nextShipmentReference(
+async function nextReferenceForTenant(
   tx: Prisma.TransactionClient,
   tenantId: string,
 ): Promise<string> {
@@ -50,11 +49,7 @@ async function nextShipmentReference(
     where: { tenantId },
     select: { reference: true },
   });
-  const highest = rows.reduce((max, row) => {
-    const match = REFERENCE_PATTERN.exec(row.reference);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0);
-  return `S-${String(highest + 1).padStart(4, "0")}`;
+  return nextShipmentReference(rows.map((row) => row.reference));
 }
 
 function isReferenceConflict(error: unknown): boolean {
@@ -140,7 +135,7 @@ export async function createShipmentAction(
             }
           }
 
-          const reference = await nextShipmentReference(tx, tenantId);
+          const reference = await nextReferenceForTenant(tx, tenantId);
 
           const shipment = await tx.shipment.create({
             data: {

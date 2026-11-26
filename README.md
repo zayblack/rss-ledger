@@ -16,7 +16,7 @@ sellers — each gets a fully isolated workspace.
 ```bash
 npm install
 cp .env.example .env          # DATABASE_URL="file:./dev.db"
-npm run db:push               # create the SQLite database
+npm run db:migrate            # create/apply migrations + generate the client
 npm run db:seed               # seed the owner + starter resources/levels
 npm run dev                   # http://localhost:3000
 ```
@@ -39,10 +39,14 @@ data** button on an empty workspace.
 | `npm run dev` | Start the dev server (Turbopack) |
 | `npm run build` | Production build (runs TypeScript) |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run check` | Regression checks for the money + packing engine |
-| `npm run db:push` | Push the Prisma schema to the database |
+| `npm run check` | Regression checks for money, packing, and references |
+| `npm run db:migrate` | Create and apply a migration in development |
+| `npm run db:deploy` | Apply pending migrations in production |
+| `npm run db:reset` | Drop, re-migrate, and re-seed the database |
+| `npm run db:push` | Prototype-only schema sync — prefer `db:migrate` |
 | `npm run db:seed` | Seed owner, resources, and trading post levels |
 | `npm run db:studio` | Open Prisma Studio |
+| `npm run user:reset-password` | Generate a new password for an account (CLI) |
 
 ## Switching to Postgres
 
@@ -50,9 +54,11 @@ The schema uses only portable Prisma features. To move to Postgres:
 
 1. In `prisma/schema.prisma`, change `provider = "sqlite"` to `provider = "postgresql"`.
 2. Set `DATABASE_URL` in `.env` to your Postgres connection string.
-3. Run `npm run db:push` (or `prisma migrate dev`) and `npm run db:seed`.
+3. Generate a fresh Postgres baseline — the committed migration SQL is
+   SQLite-specific. Delete `prisma/migrations` and run
+   `npx prisma migrate dev --name init`, then `npm run db:seed`.
 
-No code changes required.
+No application code changes required.
 
 ## How the money works
 
@@ -75,6 +81,17 @@ Posted shipments are **immutable**. To correct one, void it from its detail
 page — stock is restored, supplier credits are reversed, and the reversal is
 recorded in the ledger. Then rebook a new shipment.
 
+## Recovering access
+
+If a password is lost, run this on the machine that hosts the app:
+
+```bash
+npm run user:reset-password -- owner@example.com
+```
+
+It generates a random password, signs out every session, and prints the new
+password once. Sign in and change it in Settings → Security.
+
 ## Multi-tenancy
 
 - The first user (seeded owner) is an **owner**. Owners can create invite links
@@ -92,6 +109,7 @@ recorded in the ledger. Then rebook a new shipment.
 - Supplier share basis is stored as `shareBasis` (default `gross`) so the basis
   can be switched later without rewriting history.
 - Audit log (`AuditLog`) records every mutation.
+- Sign-in attempts are rate-limited per email and per IP to slow brute force.
 - `Resource`, `TradingPostLevel`, `Supplier`, etc. are all per-tenant.
 - No customer checkout — sales are logged manually by the seller.
 - Suppliers do not log in; they are records managed by the seller.
