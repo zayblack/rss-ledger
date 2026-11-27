@@ -3,7 +3,7 @@
 // Design notes:
 // - Every business row carries tenantId. Isolation is enforced in the data layer.
 // - Money is stored as whole units in BigInt. Convert to Number at the UI boundary.
-// - Posted shipments are immutable. Corrections are done by voiding + rebooking.
+// - Posted sales are immutable. Corrections are done by voiding + rebooking.
 // - Inventory is tracked as supplier-attributed lots, consumed FIFO, so every
 //   supplier credit can be traced to the exact units that were sold.
 // - This schema deliberately avoids Postgres-only features (enums, arrays, Decimal)
@@ -44,7 +44,7 @@ model Tenant {
   levels      TradingPostLevel[]
   deliveries  Delivery[]
   lots        Lot[]
-  shipments   Shipment[]
+  sales       Sale[]
   ledger      SupplierLedgerEntry[]
   payments    Payment[]
   invites     Invite[]
@@ -101,7 +101,7 @@ model Resource {
   tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   deliveries  Delivery[]
   lots        Lot[]
-  lines       ShipmentLine[]
+  lines       SaleLine[]
   tripItems   TripItem[]
 
   @@unique([tenantId, name])
@@ -188,7 +188,7 @@ model Lot {
   @@index([tenantId, supplierId])
 }
 
-model Shipment {
+model Sale {
   id                 String    @id @default(cuid())
   tenantId           String
   reference          String
@@ -207,7 +207,7 @@ model Shipment {
 
   tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   trips        Trip[]
-  lines        ShipmentLine[]
+  lines        SaleLine[]
   consumptions LotConsumption[]
 
   @@unique([tenantId, reference])
@@ -217,17 +217,17 @@ model Shipment {
 
 model Trip {
   id         String @id @default(cuid())
-  shipmentId String
+  saleId     String
   seq        Int
   level      Int
   capacity   BigInt
   cargoValue BigInt
   tax        BigInt
 
-  shipment Shipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  sale     Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
   items    TripItem[]
 
-  @@index([shipmentId])
+  @@index([saleId])
 }
 
 model TripItem {
@@ -244,25 +244,25 @@ model TripItem {
   @@index([tripId])
 }
 
-model ShipmentLine {
+model SaleLine {
   id         String @id @default(cuid())
-  shipmentId String
+  saleId String
   resourceId String
   quantity   BigInt
   unitPrice  BigInt
   lineTotal  BigInt
 
-  shipment     Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
   resource     Resource         @relation(fields: [resourceId], references: [id])
   consumptions LotConsumption[]
 
-  @@index([shipmentId])
+  @@index([saleId])
 }
 
 model LotConsumption {
   id             String @id @default(cuid())
-  shipmentId     String
-  shipmentLineId String
+  saleId     String
+  saleLineId String
   lotId          String
   supplierId     String
   quantity       BigInt
@@ -270,12 +270,12 @@ model LotConsumption {
   shareBps       Int
   shareAmount    BigInt
 
-  shipment Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  line     ShipmentLine @relation(fields: [shipmentLineId], references: [id], onDelete: Cascade)
+  sale     Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  line     SaleLine @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
   lot      Lot          @relation(fields: [lotId], references: [id])
   supplier Supplier     @relation(fields: [supplierId], references: [id])
 
-  @@index([shipmentId])
+  @@index([saleId])
   @@index([supplierId])
 }
 
@@ -285,7 +285,7 @@ model SupplierLedgerEntry {
   supplierId String
   type       String // credit | payment | adjustment | reversal
   amount     BigInt // signed: credit +, payment -
-  refType    String? // shipment | payment | manual
+  refType    String? // sale | payment | manual
   refId      String?
   occurredAt DateTime
   note       String?

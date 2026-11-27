@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     template: "%s · Resource Ledger",
   },
   description:
-    "Track stock, shipments, transport tax and supplier payouts for in-game resource trading.",
+    "Track stock, sales, transport tax and supplier payouts for in-game resource trading.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

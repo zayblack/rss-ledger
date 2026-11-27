@@ -3,7 +3,7 @@
  * Run with: npm run check
  */
 import assert from "node:assert/strict";
-import { planShipment, previewSupplierShares, type LevelRule } from "../src/lib/calc";
+import { planSale, previewSupplierShares, type LevelRule } from "../src/lib/calc";
 import { floorBps, roundBps } from "../src/lib/money";
 
 const level17: LevelRule = {
@@ -18,7 +18,7 @@ const level17: LevelRule = {
 assert.equal(roundBps(2_000_000, 2350), 470_000);
 
 // 2. Exactly one full trip.
-const single = planShipment(
+const single = planSale(
   [{ resourceId: "a", name: "Ore", quantity: 100, unitPrice: 20_000 }],
   level17,
 );
@@ -32,7 +32,7 @@ if (single.ok) {
 }
 
 // 3. 3,000,000 packs into 2 trips: 2M + 1M, tax 470k + 235k.
-const multi = planShipment(
+const multi = planSale(
   [{ resourceId: "a", name: "Ore", quantity: 150, unitPrice: 20_000 }],
   level17,
 );
@@ -47,7 +47,7 @@ if (multi.ok) {
 }
 
 // 4. Mixed lines are packed by descending unit value without splitting units.
-const mixed = planShipment(
+const mixed = planSale(
   [
     { resourceId: "a", name: "Crystal", quantity: 10, unitPrice: 150_000 },
     { resourceId: "b", name: "Ore", quantity: 100, unitPrice: 10_000 },
@@ -69,7 +69,7 @@ if (mixed.ok) {
 }
 
 // 5. A single unit worth more than the cap is rejected with a clear error.
-const tooBig = planShipment(
+const tooBig = planSale(
   [{ resourceId: "a", name: "Relic", quantity: 1, unitPrice: 2_500_000 }],
   level17,
 );
@@ -110,7 +110,7 @@ assert.equal(mira?.quantity, 20);
 assert.equal(mira?.amount, 80_000);
 
 // 8. Flat-fee tax mode (rate 0, flat fee per trip).
-const flat = planShipment(
+const flat = planSale(
   [{ resourceId: "a", name: "Ore", quantity: 150, unitPrice: 20_000 }],
   { ...level17, taxRateBps: 0, flatFee: 470_000 },
 );
@@ -118,7 +118,7 @@ assert.equal(flat.ok, true);
 if (flat.ok) assert.equal(flat.plan.tax, 940_000);
 
 // 9. Minimum tax is respected on a light trip.
-const minimum = planShipment(
+const minimum = planSale(
   [{ resourceId: "a", name: "Ore", quantity: 1, unitPrice: 100_000 }],
   { ...level17, taxRateBps: 1000, minTax: 50_000 },
 );

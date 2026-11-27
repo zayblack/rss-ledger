@@ -7,9 +7,9 @@ import { todayInput } from "@/lib/format";
 import { PageHeader, buttonClass, EmptyState } from "@/components/ui";
 import { Planner } from "./planner";
 
-export const metadata = { title: "Plan shipment" };
+export const metadata = { title: "Plan sale" };
 
-export default async function NewShipmentPage() {
+export default async function NewSalePage() {
   const session = await requireSession();
   const tenantId = session.tenant.id;
 
@@ -64,10 +64,10 @@ export default async function NewShipmentPage() {
   return (
     <>
       <PageHeader
-        title="Plan shipment"
+        title="Plan sale"
         description="Build the sale, pack it into trips, and see tax and supplier shares before posting."
         actions={
-          <Link href="/shipments" className={buttonClass("ghost", "md")}>
+          <Link href="/sales" className={buttonClass("ghost", "md")}>
             Cancel
           </Link>
         }
@@ -77,7 +77,7 @@ export default async function NewShipmentPage() {
         <EmptyState
           icon={<Package className="size-6" />}
           title="No resources configured"
-          description="Add your resource types and prices in Settings before planning a shipment."
+          description="Add your resource types and prices in Settings before planning a sale."
           action={
             <Link href="/settings" className={buttonClass("primary", "sm")}>
               Open settings

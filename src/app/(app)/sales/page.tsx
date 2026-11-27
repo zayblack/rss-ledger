@@ -17,7 +17,7 @@ import {
   cn,
 } from "@/components/ui";
 
-export const metadata = { title: "Shipments" };
+export const metadata = { title: "Sales" };
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -26,7 +26,7 @@ const FILTERS = [
   { key: "void", label: "Void" },
 ] as const;
 
-export default async function ShipmentsPage({
+export default async function SalesPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string }>;
@@ -38,25 +38,25 @@ export default async function ShipmentsPage({
 
   const active = FILTERS.some((filter) => filter.key === status) ? status! : "all";
 
-  const shipments = await prisma.shipment.findMany({
+  const sales = await prisma.sale.findMany({
     where: { tenantId, ...(active === "all" ? {} : { status: active }) },
     orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
     take: 200,
   });
 
-  const posted = shipments.filter((shipment) => shipment.status === "posted");
-  const netTotal = posted.reduce((sum, shipment) => sum + toNumber(shipment.netTotal), 0);
-  const taxTotal = posted.reduce((sum, shipment) => sum + toNumber(shipment.taxTotal), 0);
+  const posted = sales.filter((sale) => sale.status === "posted");
+  const netTotal = posted.reduce((sum, sale) => sum + toNumber(sale.netTotal), 0);
+  const taxTotal = posted.reduce((sum, sale) => sum + toNumber(sale.taxTotal), 0);
 
   return (
     <>
       <PageHeader
-        title="Shipments"
+        title="Sales"
         description="Every sale, its trips, its tax, and the supplier shares it created."
         actions={
-          <Link href="/shipments/new" className={buttonClass("primary", "md")}>
+          <Link href="/sales/new" className={buttonClass("primary", "md")}>
             <Plus className="size-4" />
-            Plan shipment
+            Plan sale
           </Link>
         }
       />
@@ -66,7 +66,7 @@ export default async function ShipmentsPage({
           {FILTERS.map((filter) => (
             <Link
               key={filter.key}
-              href={filter.key === "all" ? "/shipments" : `/shipments?status=${filter.key}`}
+              href={filter.key === "all" ? "/sales" : `/sales?status=${filter.key}`}
               className={cn(
                 "rounded-md px-3 py-1.5 text-xs transition-colors",
                 active === filter.key
@@ -88,15 +88,15 @@ export default async function ShipmentsPage({
       </div>
 
       <Card>
-        {shipments.length === 0 ? (
+        {sales.length === 0 ? (
           <EmptyState
             className="m-5"
             icon={<Truck className="size-6" />}
-            title={active === "all" ? "No shipments yet" : `No ${active} shipments`}
-            description="Plan a shipment to pack trips, calculate tax and credit suppliers in one step."
+            title={active === "all" ? "No sales yet" : `No ${active} sales`}
+            description="Plan a sale to pack trips, calculate tax and credit suppliers in one step."
             action={
-              <Link href="/shipments/new" className={buttonClass("primary", "sm")}>
-                Plan a shipment
+              <Link href="/sales/new" className={buttonClass("primary", "sm")}>
+                Plan a sale
               </Link>
             }
           />
@@ -115,43 +115,43 @@ export default async function ShipmentsPage({
               </tr>
             </thead>
             <tbody>
-              {shipments.map((shipment) => (
-                <Tr key={shipment.id}>
+              {sales.map((sale) => (
+                <Tr key={sale.id}>
                   <Td>
                     <Link
-                      href={`/shipments/${shipment.id}`}
+                      href={`/sales/${sale.id}`}
                       className="num text-xs font-medium text-accent hover:underline"
                     >
-                      {shipment.reference}
+                      {sale.reference}
                     </Link>
                   </Td>
                   <Td className="whitespace-nowrap text-xs text-muted">
-                    {formatDate(shipment.soldAt)}
+                    {formatDate(sale.soldAt)}
                   </Td>
-                  <Td className="max-w-[180px] truncate text-xs">{shipment.customerName}</Td>
+                  <Td className="max-w-[180px] truncate text-xs">{sale.customerName}</Td>
                   <Td align="right" className="num text-xs text-muted">
-                    {formatAmount(toNumber(shipment.grossTotal))}
+                    {formatAmount(toNumber(sale.grossTotal))}
                   </Td>
                   <Td align="right" className="num text-xs text-warn">
-                    {formatAmount(toNumber(shipment.taxTotal))}
+                    {formatAmount(toNumber(sale.taxTotal))}
                   </Td>
                   <Td align="right" className="num text-xs font-medium">
-                    {formatAmount(toNumber(shipment.netTotal))}
+                    {formatAmount(toNumber(sale.netTotal))}
                   </Td>
                   <Td align="right" className="num text-xs text-muted">
-                    {formatAmount(toNumber(shipment.supplierShareTotal))}
+                    {formatAmount(toNumber(sale.supplierShareTotal))}
                   </Td>
                   <Td>
                     <Badge
                       tone={
-                        shipment.status === "posted"
+                        sale.status === "posted"
                           ? "success"
-                          : shipment.status === "void"
+                          : sale.status === "void"
                             ? "danger"
                             : "neutral"
                       }
                     >
-                      {shipment.status}
+                      {sale.status}
                     </Badge>
                   </Td>
                 </Tr>

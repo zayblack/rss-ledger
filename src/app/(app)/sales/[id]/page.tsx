@@ -5,7 +5,7 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { formatAmount, formatMoney, percentOf, toNumber } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { deleteDraftAction, voidShipmentAction } from "@/actions/shipments";
+import { deleteDraftAction, voidSaleAction } from "@/actions/sales";
 import {
   Alert,
   Badge,
@@ -24,9 +24,9 @@ import {
   buttonClass,
 } from "@/components/ui";
 
-export const metadata = { title: "Shipment" };
+export const metadata = { title: "Sale" };
 
-export default async function ShipmentDetailPage({
+export default async function SaleDetailPage({
   params,
   searchParams,
 }: {
@@ -39,7 +39,7 @@ export default async function ShipmentDetailPage({
   const { id } = await params;
   const { error } = await searchParams;
 
-  const shipment = await prisma.shipment.findFirst({
+  const sale = await prisma.sale.findFirst({
     where: { id, tenantId },
     include: {
       lines: { include: { resource: true }, orderBy: { id: "asc" } },
@@ -51,10 +51,10 @@ export default async function ShipmentDetailPage({
     },
   });
 
-  if (!shipment) notFound();
+  if (!sale) notFound();
 
   const ledger = await prisma.supplierLedgerEntry.findMany({
-    where: { tenantId, refType: "shipment", refId: shipment.id },
+    where: { tenantId, refType: "sale", refId: sale.id },
     include: { supplier: true },
     orderBy: { createdAt: "asc" },
   });
@@ -63,7 +63,7 @@ export default async function ShipmentDetailPage({
     string,
     { name: string; shareBps: number; units: number; gross: number; share: number }
   >();
-  for (const consumption of shipment.consumptions) {
+  for (const consumption of sale.consumptions) {
     const current = bySupplier.get(consumption.supplierId) ?? {
       name: consumption.supplier.name,
       shareBps: consumption.shareBps,
@@ -77,49 +77,49 @@ export default async function ShipmentDetailPage({
     bySupplier.set(consumption.supplierId, current);
   }
 
-  const gross = toNumber(shipment.grossTotal);
-  const tax = toNumber(shipment.taxTotal);
-  const net = toNumber(shipment.netTotal);
-  const supplierShare = toNumber(shipment.supplierShareTotal);
+  const gross = toNumber(sale.grossTotal);
+  const tax = toNumber(sale.taxTotal);
+  const net = toNumber(sale.netTotal);
+  const supplierShare = toNumber(sale.supplierShareTotal);
   const profit = net - supplierShare;
-  const totalUnits = shipment.lines.reduce((sum, line) => sum + toNumber(line.quantity), 0);
+  const totalUnits = sale.lines.reduce((sum, line) => sum + toNumber(line.quantity), 0);
 
   return (
     <>
       <PageHeader
         title={
           <span className="flex flex-wrap items-center gap-3">
-            <span className="num">{shipment.reference}</span>
+            <span className="num">{sale.reference}</span>
             <Badge
               tone={
-                shipment.status === "posted"
+                sale.status === "posted"
                   ? "success"
-                  : shipment.status === "void"
+                  : sale.status === "void"
                     ? "danger"
                     : "neutral"
               }
             >
-              {shipment.status}
+              {sale.status}
             </Badge>
           </span>
         }
-        description={`${shipment.customerName} · ${formatDate(shipment.soldAt)} · ${formatAmount(
+        description={`${sale.customerName} · ${formatDate(sale.soldAt)} · ${formatAmount(
           totalUnits,
         )} units`}
         actions={
-          <Link href="/shipments" className={buttonClass("ghost", "md")}>
+          <Link href="/sales" className={buttonClass("ghost", "md")}>
             <ArrowLeft className="size-4" />
-            All shipments
+            All sales
           </Link>
         }
       />
 
       {error ? <Alert tone="danger" className="mb-4">{error}</Alert> : null}
 
-      {shipment.status === "void" ? (
+      {sale.status === "void" ? (
         <Alert tone="danger" className="mb-4">
-          Voided {shipment.voidedAt ? formatDateTime(shipment.voidedAt) : ""}
-          {shipment.voidReason ? ` — ${shipment.voidReason}` : ""}. Stock was restored and supplier
+          Voided {sale.voidedAt ? formatDateTime(sale.voidedAt) : ""}
+          {sale.voidReason ? ` — ${sale.voidReason}` : ""}. Stock was restored and supplier
           credits were reversed.
         </Alert>
       ) : null}
@@ -140,13 +140,13 @@ export default async function ShipmentDetailPage({
         <Card>
           <CardHeader
             title="Trip manifest"
-            subtitle={`${shipment.trips.length} trip${shipment.trips.length === 1 ? "" : "s"} · ${
-              shipment.trips[0] ? `level ${shipment.trips[0].level}` : "—"
+            subtitle={`${sale.trips.length} trip${sale.trips.length === 1 ? "" : "s"} · ${
+              sale.trips[0] ? `level ${sale.trips[0].level}` : "—"
             }`}
             action={<Truck className="size-4 text-faint" />}
           />
           <CardBody className="space-y-2 pt-3">
-            {shipment.trips.map((trip) => {
+            {sale.trips.map((trip) => {
               const capacity = toNumber(trip.capacity);
               const cargo = toNumber(trip.cargoValue);
               const fill = percentOf(cargo, capacity);
@@ -181,7 +181,7 @@ export default async function ShipmentDetailPage({
 
         <div className="space-y-4">
           <Card>
-            <CardHeader title="Supplier credits" subtitle="Created when this shipment posted" />
+            <CardHeader title="Supplier credits" subtitle="Created when this sale posted" />
             <CardBody className="pt-3">
               {bySupplier.size === 0 ? (
                 <p className="text-xs text-muted">No supplier attribution recorded.</p>
@@ -218,42 +218,42 @@ export default async function ShipmentDetailPage({
           <Card>
             <CardHeader title="Actions" subtitle="Posted sales are immutable." />
             <CardBody className="space-y-3 pt-3">
-              {shipment.status === "posted" ? (
+              {sale.status === "posted" ? (
                 <details className="rounded-lg border border-danger/20 bg-danger/[0.03] p-3">
                   <summary className="flex cursor-pointer items-center gap-2 text-xs font-medium text-danger">
                     <RotateCcw className="size-3.5" />
-                    Void this shipment
+                    Void this sale
                   </summary>
                   <p className="mt-2 text-[11px] leading-relaxed text-muted">
                     Restores the sold units to stock, reverses every supplier credit, and keeps the
                     record for your history.
                   </p>
-                  <form action={voidShipmentAction} className="mt-3 space-y-2">
-                    <input type="hidden" name="id" value={shipment.id} />
+                  <form action={voidSaleAction} className="mt-3 space-y-2">
+                    <input type="hidden" name="id" value={sale.id} />
                     <Input name="reason" placeholder="Reason (required)" required minLength={3} />
                     <Button type="submit" variant="danger" size="sm" className="w-full">
                       Void and reverse
                     </Button>
                   </form>
                 </details>
-              ) : shipment.status === "draft" ? (
+              ) : sale.status === "draft" ? (
                 <form action={deleteDraftAction}>
-                  <input type="hidden" name="id" value={shipment.id} />
+                  <input type="hidden" name="id" value={sale.id} />
                   <Button type="submit" variant="danger" size="sm" className="w-full">
                     Delete draft
                   </Button>
                 </form>
               ) : (
                 <p className="text-xs text-muted">
-                  This shipment was voided and can no longer be changed.
+                  This sale was voided and can no longer be changed.
                 </p>
               )}
 
-              {shipment.notes ? (
+              {sale.notes ? (
                 <div className="rounded-lg border border-line bg-canvas/50 p-3">
                   <p className="text-[10px] uppercase tracking-wider text-faint">Notes</p>
                   <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted">
-                    {shipment.notes}
+                    {sale.notes}
                   </p>
                 </div>
               ) : null}
@@ -275,7 +275,7 @@ export default async function ShipmentDetailPage({
               </tr>
             </thead>
             <tbody>
-              {shipment.lines.map((line) => (
+              {sale.lines.map((line) => (
                 <Tr key={line.id}>
                   <Td className="text-xs">{line.resource.name}</Td>
                   <Td align="right" className="num text-xs">
@@ -297,7 +297,7 @@ export default async function ShipmentDetailPage({
       <Card className="mt-4">
         <CardHeader
           title="Ledger entries"
-          subtitle="Credits and any reversals created by this shipment"
+          subtitle="Credits and any reversals created by this sale"
         />
         <div className="mt-3">
           <Table>

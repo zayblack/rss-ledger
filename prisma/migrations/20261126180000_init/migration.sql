@@ -112,7 +112,7 @@ CREATE TABLE "Lot" (
 );
 
 -- CreateTable
-CREATE TABLE "Shipment" (
+CREATE TABLE "Sale" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "tenantId" TEXT NOT NULL,
     "reference" TEXT NOT NULL,
@@ -128,19 +128,19 @@ CREATE TABLE "Shipment" (
     "postedAt" DATETIME,
     "voidedAt" DATETIME,
     "voidReason" TEXT,
-    CONSTRAINT "Shipment_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "Sale_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
 CREATE TABLE "Trip" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "shipmentId" TEXT NOT NULL,
+    "saleId" TEXT NOT NULL,
     "seq" INTEGER NOT NULL,
     "level" INTEGER NOT NULL,
     "capacity" BIGINT NOT NULL,
     "cargoValue" BIGINT NOT NULL,
     "tax" BIGINT NOT NULL,
-    CONSTRAINT "Trip_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "Trip_saleId_fkey" FOREIGN KEY ("saleId") REFERENCES "Sale" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -156,30 +156,30 @@ CREATE TABLE "TripItem" (
 );
 
 -- CreateTable
-CREATE TABLE "ShipmentLine" (
+CREATE TABLE "SaleLine" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "shipmentId" TEXT NOT NULL,
+    "saleId" TEXT NOT NULL,
     "resourceId" TEXT NOT NULL,
     "quantity" BIGINT NOT NULL,
     "unitPrice" BIGINT NOT NULL,
     "lineTotal" BIGINT NOT NULL,
-    CONSTRAINT "ShipmentLine_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "ShipmentLine_resourceId_fkey" FOREIGN KEY ("resourceId") REFERENCES "Resource" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    CONSTRAINT "SaleLine_saleId_fkey" FOREIGN KEY ("saleId") REFERENCES "Sale" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "SaleLine_resourceId_fkey" FOREIGN KEY ("resourceId") REFERENCES "Resource" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateTable
 CREATE TABLE "LotConsumption" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "shipmentId" TEXT NOT NULL,
-    "shipmentLineId" TEXT NOT NULL,
+    "saleId" TEXT NOT NULL,
+    "saleLineId" TEXT NOT NULL,
     "lotId" TEXT NOT NULL,
     "supplierId" TEXT NOT NULL,
     "quantity" BIGINT NOT NULL,
     "unitPrice" BIGINT NOT NULL,
     "shareBps" INTEGER NOT NULL,
     "shareAmount" BIGINT NOT NULL,
-    CONSTRAINT "LotConsumption_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "LotConsumption_shipmentLineId_fkey" FOREIGN KEY ("shipmentLineId") REFERENCES "ShipmentLine" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "LotConsumption_saleId_fkey" FOREIGN KEY ("saleId") REFERENCES "Sale" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "LotConsumption_saleLineId_fkey" FOREIGN KEY ("saleLineId") REFERENCES "SaleLine" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "LotConsumption_lotId_fkey" FOREIGN KEY ("lotId") REFERENCES "Lot" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT "LotConsumption_supplierId_fkey" FOREIGN KEY ("supplierId") REFERENCES "Supplier" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
@@ -295,25 +295,25 @@ CREATE INDEX "Lot_tenantId_resourceId_receivedAt_idx" ON "Lot"("tenantId", "reso
 CREATE INDEX "Lot_tenantId_supplierId_idx" ON "Lot"("tenantId", "supplierId");
 
 -- CreateIndex
-CREATE INDEX "Shipment_tenantId_soldAt_idx" ON "Shipment"("tenantId", "soldAt");
+CREATE INDEX "Sale_tenantId_soldAt_idx" ON "Sale"("tenantId", "soldAt");
 
 -- CreateIndex
-CREATE INDEX "Shipment_tenantId_status_idx" ON "Shipment"("tenantId", "status");
+CREATE INDEX "Sale_tenantId_status_idx" ON "Sale"("tenantId", "status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Shipment_tenantId_reference_key" ON "Shipment"("tenantId", "reference");
+CREATE UNIQUE INDEX "Sale_tenantId_reference_key" ON "Sale"("tenantId", "reference");
 
 -- CreateIndex
-CREATE INDEX "Trip_shipmentId_idx" ON "Trip"("shipmentId");
+CREATE INDEX "Trip_saleId_idx" ON "Trip"("saleId");
 
 -- CreateIndex
 CREATE INDEX "TripItem_tripId_idx" ON "TripItem"("tripId");
 
 -- CreateIndex
-CREATE INDEX "ShipmentLine_shipmentId_idx" ON "ShipmentLine"("shipmentId");
+CREATE INDEX "SaleLine_saleId_idx" ON "SaleLine"("saleId");
 
 -- CreateIndex
-CREATE INDEX "LotConsumption_shipmentId_idx" ON "LotConsumption"("shipmentId");
+CREATE INDEX "LotConsumption_saleId_idx" ON "LotConsumption"("saleId");
 
 -- CreateIndex
 CREATE INDEX "LotConsumption_supplierId_idx" ON "LotConsumption"("supplierId");

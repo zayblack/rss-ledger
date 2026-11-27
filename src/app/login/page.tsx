@@ -28,14 +28,14 @@ export default async function LoginPage() {
             <span className="text-accent">Every payout.</span>
           </h1>
           <p className="mt-5 text-sm leading-relaxed text-muted">
-            A private ledger for in-game resource sellers. Pack shipments into trips, see the
+            A private ledger for in-game resource sellers. Pack sales into trips, see the
             transport tax before you send, and know exactly what each supplier is owed.
           </p>
 
           <ul className="mt-8 space-y-3 text-sm text-muted">
             <li className="flex items-start gap-3">
               <TrendingUp className="mt-0.5 size-4 shrink-0 text-accent" />
-              Profit net of tax, per shipment and per period.
+              Profit net of tax, per sale and per period.
             </li>
             <li className="flex items-start gap-3">
               <Users className="mt-0.5 size-4 shrink-0 text-accent" />

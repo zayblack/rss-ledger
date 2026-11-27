@@ -52,8 +52,8 @@ export default async function SupplierDetailPage({
       take: 100,
     }),
     prisma.lotConsumption.findMany({
-      where: { supplierId: id, shipment: { tenantId, status: "posted" } },
-      include: { shipment: true },
+      where: { supplierId: id, sale: { tenantId, status: "posted" } },
+      include: { sale: true },
     }),
     prisma.payment.findMany({
       where: { tenantId, supplierId: id },
@@ -72,7 +72,7 @@ export default async function SupplierDetailPage({
     const amount = toNumber(entry.amount);
     balance += amount;
     if (entry.type === "credit") earned += amount;
-    else if (entry.type === "reversal" && entry.refType === "shipment") earned += amount;
+    else if (entry.type === "reversal" && entry.refType === "sale") earned += amount;
     else if (entry.type === "payment") paid += -amount;
     else if (entry.type === "reversal" && entry.refType === "payment") paid -= amount;
   }
@@ -125,7 +125,7 @@ export default async function SupplierDetailPage({
       {balance < 0 ? (
         <Alert tone="danger" className="mb-4">
           This supplier has a negative balance of {formatMoney(Math.abs(balance), currency)} — they
-          have been paid more than they earned, usually after a voided shipment.
+          have been paid more than they earned, usually after a voided sale.
         </Alert>
       ) : null}
 
@@ -352,13 +352,13 @@ export default async function SupplierDetailPage({
         <Card className="mt-4">
           <CardHeader
             title="Units sold from this supplier"
-            subtitle="Every lot consumption, newest shipment first"
+            subtitle="Every lot consumption, newest sale first"
           />
           <div className="mt-3">
             <Table>
               <thead>
                 <tr>
-                  <Th>Shipment</Th>
+                  <Th>Sale</Th>
                   <Th>Date</Th>
                   <Th align="right">Units</Th>
                   <Th align="right">Unit price</Th>
@@ -369,20 +369,20 @@ export default async function SupplierDetailPage({
               <tbody>
                 {[...consumptions]
                   .sort(
-                    (a, b) => b.shipment.soldAt.getTime() - a.shipment.soldAt.getTime(),
+                    (a, b) => b.sale.soldAt.getTime() - a.sale.soldAt.getTime(),
                   )
                   .slice(0, 30)
                   .map((row) => (
                     <Tr key={row.id}>
                       <Td>
                         <Link
-                          href={`/shipments/${row.shipmentId}`}
+                          href={`/sales/${row.saleId}`}
                           className="num text-xs text-accent hover:underline"
                         >
-                          {row.shipment.reference}
+                          {row.sale.reference}
                         </Link>
                       </Td>
-                      <Td className="text-xs text-muted">{formatDate(row.shipment.soldAt)}</Td>
+                      <Td className="text-xs text-muted">{formatDate(row.sale.soldAt)}</Td>
                       <Td align="right" className="num text-xs">
                         {formatAmount(toNumber(row.quantity))}
                       </Td>

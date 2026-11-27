@@ -1,18 +1,18 @@
-const REFERENCE_PATTERN = /^S-(\d+)$/;
+const REFERENCE_PATTERN = /^SL-(\d+)$/;
 
-export function formatShipmentReference(sequence: number): string {
-  return `S-${String(sequence).padStart(4, "0")}`;
+export function formatSaleReference(sequence: number): string {
+  return `SL-${String(sequence).padStart(4, "0")}`;
 }
 
 /**
- * One past the highest shipment number already used. Gaps from voided or
- * deleted shipments are never reused, and non-matching legacy references are
+ * One past the highest sale number already used. Gaps from voided or
+ * deleted sales are never reused, and non-matching legacy references are
  * ignored.
  */
-export function nextShipmentReference(existing: string[]): string {
+export function nextSaleReference(existing: string[]): string {
   const highest = existing.reduce((max, reference) => {
     const match = REFERENCE_PATTERN.exec(reference);
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
-  return formatShipmentReference(highest + 1);
+  return formatSaleReference(highest + 1);
 }

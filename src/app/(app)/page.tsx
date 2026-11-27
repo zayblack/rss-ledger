@@ -46,12 +46,12 @@ export default async function DashboardPage() {
   const [
     resources,
     stockRows,
-    recentShipments,
-    postedShipments,
+    recentSales,
+    postedSales,
     suppliers,
     ledgerRows,
     deliveryCount,
-    shipmentCount,
+    saleCount,
     levelCount,
   ] = await Promise.all([
     prisma.resource.findMany({
@@ -63,12 +63,12 @@ export default async function DashboardPage() {
       where: { tenantId },
       _sum: { quantityRemaining: true },
     }),
-    prisma.shipment.findMany({
+    prisma.sale.findMany({
       where: { tenantId },
       orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
       take: 6,
     }),
-    prisma.shipment.findMany({
+    prisma.sale.findMany({
       where: { tenantId, status: "posted", soldAt: { gte: since } },
       select: {
         soldAt: true,
@@ -88,7 +88,7 @@ export default async function DashboardPage() {
       _sum: { amount: true },
     }),
     prisma.delivery.count({ where: { tenantId } }),
-    prisma.shipment.count({ where: { tenantId, status: "posted" } }),
+    prisma.sale.count({ where: { tenantId, status: "posted" } }),
     prisma.tradingPostLevel.count({ where: { tenantId } }),
   ]);
 
@@ -96,10 +96,10 @@ export default async function DashboardPage() {
     stockRows.map((row) => [row.resourceId, toNumber(row._sum.quantityRemaining)]),
   );
 
-  const gross = postedShipments.reduce((sum, s) => sum + toNumber(s.grossTotal), 0);
-  const tax = postedShipments.reduce((sum, s) => sum + toNumber(s.taxTotal), 0);
-  const net = postedShipments.reduce((sum, s) => sum + toNumber(s.netTotal), 0);
-  const supplierShare = postedShipments.reduce(
+  const gross = postedSales.reduce((sum, s) => sum + toNumber(s.grossTotal), 0);
+  const tax = postedSales.reduce((sum, s) => sum + toNumber(s.taxTotal), 0);
+  const net = postedSales.reduce((sum, s) => sum + toNumber(s.netTotal), 0);
+  const supplierShare = postedSales.reduce(
     (sum, s) => sum + toNumber(s.supplierShareTotal),
     0,
   );
@@ -133,10 +133,10 @@ export default async function DashboardPage() {
     return { date, key: date.toISOString().slice(0, 10), net: 0 };
   });
   const chartIndex = new Map(chartDays.map((day) => [day.key, day]));
-  for (const shipment of postedShipments) {
-    const key = shipment.soldAt.toISOString().slice(0, 10);
+  for (const sale of postedSales) {
+    const key = sale.soldAt.toISOString().slice(0, 10);
     const bucket = chartIndex.get(key);
-    if (bucket) bucket.net += toNumber(shipment.netTotal);
+    if (bucket) bucket.net += toNumber(sale.netTotal);
   }
   const chartMax = Math.max(...chartDays.map((day) => day.net), 1);
 
@@ -153,7 +153,7 @@ export default async function DashboardPage() {
     },
     { label: "Add a supplier", done: suppliers.length > 0, href: "/suppliers" },
     { label: "Record a supplier delivery", done: deliveryCount > 0, href: "/inventory" },
-    { label: "Post your first shipment", done: shipmentCount > 0, href: "/shipments/new" },
+    { label: "Post your first sale", done: saleCount > 0, href: "/sales/new" },
   ];
   const doneCount = steps.filter((step) => step.done).length;
   const showOnboarding = doneCount < steps.length;
@@ -171,9 +171,9 @@ export default async function DashboardPage() {
               <Package className="size-4" />
               Record delivery
             </Link>
-            <Link href="/shipments/new" className={buttonClass("primary", "md")}>
+            <Link href="/sales/new" className={buttonClass("primary", "md")}>
               <Plus className="size-4" />
-              Plan shipment
+              Plan sale
             </Link>
           </>
         }
@@ -184,7 +184,7 @@ export default async function DashboardPage() {
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
             Low stock on {lowStock.map((resource) => resource.name).join(", ")}. Record a delivery
-            before your next shipment.
+            before your next sale.
           </span>
         </Alert>
       ) : null}
@@ -325,26 +325,26 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader
             title="Recent sales"
-            subtitle="Newest shipments first"
+            subtitle="Newest sales first"
             action={
               <Link
-                href="/shipments"
+                href="/sales"
                 className="inline-flex items-center gap-1 text-xs text-muted hover:text-ink"
               >
-                All shipments <ArrowRight className="size-3" />
+                All sales <ArrowRight className="size-3" />
               </Link>
             }
           />
           <div className="mt-3">
-            {recentShipments.length === 0 ? (
+            {recentSales.length === 0 ? (
               <div className="px-5 pb-5">
                 <EmptyState
                   icon={<Truck className="size-6" />}
-                  title="No shipments yet"
-                  description="Plan a shipment to see revenue, tax and supplier shares before you post it."
+                  title="No sales yet"
+                  description="Plan a sale to see revenue, tax and supplier shares before you post it."
                   action={
-                    <Link href="/shipments/new" className={buttonClass("primary", "sm")}>
-                      Plan your first shipment
+                    <Link href="/sales/new" className={buttonClass("primary", "sm")}>
+                      Plan your first sale
                     </Link>
                   }
                 />
@@ -361,29 +361,29 @@ export default async function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentShipments.map((shipment) => (
-                    <Tr key={shipment.id}>
+                  {recentSales.map((sale) => (
+                    <Tr key={sale.id}>
                       <Td className="num text-xs text-muted">
-                        <Link href={`/shipments/${shipment.id}`} className="hover:text-ink">
-                          {shipment.reference}
+                        <Link href={`/sales/${sale.id}`} className="hover:text-ink">
+                          {sale.reference}
                         </Link>
                       </Td>
-                      <Td className="text-xs text-muted">{formatDate(shipment.soldAt)}</Td>
-                      <Td className="max-w-[160px] truncate text-xs">{shipment.customerName}</Td>
+                      <Td className="text-xs text-muted">{formatDate(sale.soldAt)}</Td>
+                      <Td className="max-w-[160px] truncate text-xs">{sale.customerName}</Td>
                       <Td align="right" className="num text-xs">
-                        {formatAmount(toNumber(shipment.netTotal))}
+                        {formatAmount(toNumber(sale.netTotal))}
                       </Td>
                       <Td>
                         <Badge
                           tone={
-                            shipment.status === "posted"
+                            sale.status === "posted"
                               ? "success"
-                              : shipment.status === "void"
+                              : sale.status === "void"
                                 ? "danger"
                                 : "neutral"
                           }
                         >
-                          {shipment.status}
+                          {sale.status}
                         </Badge>
                       </Td>
                     </Tr>

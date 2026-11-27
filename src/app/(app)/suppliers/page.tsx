@@ -36,7 +36,7 @@ export default async function SuppliersPage() {
     }),
     prisma.lotConsumption.groupBy({
       by: ["supplierId"],
-      where: { shipment: { tenantId, status: "posted" } },
+      where: { sale: { tenantId, status: "posted" } },
       _sum: { quantity: true, shareAmount: true },
     }),
   ]);

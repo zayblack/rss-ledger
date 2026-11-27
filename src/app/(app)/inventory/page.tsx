@@ -88,7 +88,7 @@ export default async function InventoryPage({
       {flags.removed ? <Alert tone="success" className="mb-4">Delivery removed.</Alert> : null}
       {flags.demo ? (
         <Alert tone="info" className="mb-4">
-          Sample suppliers and deliveries loaded. Plan a shipment to see the engine in action.
+          Sample suppliers and deliveries loaded. Plan a sale to see the engine in action.
         </Alert>
       ) : null}
       {flags.error ? <Alert tone="danger" className="mb-4">{flags.error}</Alert> : null}
@@ -224,7 +224,7 @@ export default async function InventoryPage({
       <Card className="mt-4">
         <CardHeader
           title="Delivery history"
-          subtitle="Untouched deliveries can be removed. Once units are sold, void the shipment instead."
+          subtitle="Untouched deliveries can be removed. Once units are sold, void the sale instead."
         />
         <div className="mt-3">
           {deliveries.length === 0 ? (

@@ -43,7 +43,7 @@ export default async function SettingsPage() {
             </p>
             <p>
               <span className="text-ink">Supplier share</span> is a percentage of the gross sale
-              price of the exact units they supplied, frozen at the moment the shipment posts. Your{" "}
+              price of the exact units they supplied, frozen at the moment the sale posts. Your{" "}
               <span className="text-ink">profit</span> is net revenue minus supplier shares.
             </p>
             <Alert tone="info">
@@ -104,7 +104,7 @@ export default async function SettingsPage() {
           <CardBody>
             {levels.length === 0 ? (
               <Alert tone="warn">
-                No levels configured. Add at least one before planning a shipment.
+                No levels configured. Add at least one before planning a sale.
               </Alert>
             ) : null}
             <LevelsEditor
@@ -121,7 +121,7 @@ export default async function SettingsPage() {
       </div>
 
       <p className="mt-8 text-[11px] leading-relaxed text-faint">
-        Posted shipments are immutable. To correct a mistake, void the shipment from its detail
+        Posted sales are immutable. To correct a mistake, void the sale from its detail
         page — stock is restored and supplier credits are reversed automatically.
       </p>
     </>

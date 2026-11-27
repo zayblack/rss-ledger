@@ -197,7 +197,7 @@ export async function saveLevelsAction(
   });
 
   revalidatePath("/settings");
-  revalidatePath("/shipments/new");
+  revalidatePath("/sales/new");
   return { success: `Saved ${rows.length} trading post levels.` };
 }
 

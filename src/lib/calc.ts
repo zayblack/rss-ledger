@@ -39,7 +39,7 @@ export type ResourcePlan = {
   value: number;
 };
 
-export type ShipmentPlan = {
+export type SalePlan = {
   trips: TripPlan[];
   gross: number;
   tax: number;
@@ -51,7 +51,7 @@ export type ShipmentPlan = {
 };
 
 export type PlanResult =
-  | { ok: true; plan: ShipmentPlan }
+  | { ok: true; plan: SalePlan }
   | { ok: false; error: string };
 
 export function computeTripTax(cargoValue: number, rule: LevelRule): number {
@@ -60,20 +60,20 @@ export function computeTripTax(cargoValue: number, rule: LevelRule): number {
 }
 
 /**
- * Pack shipment lines into trips capped at the level's maximum cargo value.
+ * Pack sale lines into trips capped at the level's maximum cargo value.
  *
  * Strategy: first-fit decreasing by unit value. For each trip we take as many
  * units as possible from the most valuable line first. This keeps trips full
  * without splitting units, and produces a clean manifest.
  */
-export function planShipment(lines: PlanLine[], rule: LevelRule): PlanResult {
+export function planSale(lines: PlanLine[], rule: LevelRule): PlanResult {
   if (!Number.isInteger(rule.maxCargoValue) || rule.maxCargoValue <= 0) {
     throw new Error("Invalid trading post level: maximum cargo value must be positive.");
   }
 
   const active = lines.filter((line) => line.quantity > 0);
   if (active.length === 0) {
-    return { ok: false, error: "Add at least one resource to the shipment." };
+    return { ok: false, error: "Add at least one resource to the sale." };
   }
 
   for (const line of active) {
@@ -103,7 +103,7 @@ export function planShipment(lines: PlanLine[], rule: LevelRule): PlanResult {
   while (remaining.some((qty) => qty > 0)) {
     guard += 1;
     if (guard > 5000) {
-      return { ok: false, error: "Could not pack this shipment into trips. Check the trading post table." };
+      return { ok: false, error: "Could not pack this sale into trips. Check the trading post table." };
     }
 
     let cargoValue = 0;
@@ -162,7 +162,7 @@ export function planShipment(lines: PlanLine[], rule: LevelRule): PlanResult {
   const warnings: string[] = [];
   const lastTrip = trips[trips.length - 1];
   if (trips.length > 1) {
-    warnings.push(`This shipment needs ${trips.length} trips at level ${rule.level}.`);
+    warnings.push(`This sale needs ${trips.length} trips at level ${rule.level}.`);
   }
   if (lastTrip && lastTrip.waste > 0) {
     const fill = percentOf(lastTrip.cargoValue, lastTrip.capacity);

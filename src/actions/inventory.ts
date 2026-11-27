@@ -97,7 +97,7 @@ export async function voidDeliveryAction(formData: FormData): Promise<void> {
   if (!untouched) {
     redirect(
       `/inventory?error=${encodeURIComponent(
-        `That ${delivery.resource.name} delivery has already been sold from. Void the related shipments first.`,
+        `That ${delivery.resource.name} delivery has already been sold from. Void the related sales first.`,
       )}`,
     );
   }

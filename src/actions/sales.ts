@@ -6,15 +6,15 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { planShipment, type PlanLine } from "@/lib/calc";
-import { nextShipmentReference } from "@/lib/references";
+import { planSale, type PlanLine } from "@/lib/calc";
+import { nextSaleReference } from "@/lib/references";
 import { floorBps, toNumber } from "@/lib/money";
 import { logAudit } from "@/lib/audit";
 import { parseDateInput } from "@/lib/format";
 
 class ActionError extends Error {}
 
-const shipmentSchema = z.object({
+const saleSchema = z.object({
   customerName: z.string().trim().min(1, "Enter a customer name.").max(120),
   soldAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a valid sale date."),
   notes: z.string().max(2000).optional(),
@@ -31,25 +31,25 @@ const shipmentSchema = z.object({
     .max(50),
 });
 
-export type CreateShipmentInput = z.infer<typeof shipmentSchema>;
-export type CreateShipmentResult =
+export type CreateSaleInput = z.infer<typeof saleSchema>;
+export type CreateSaleResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
 
 /**
  * Reads the tenant's existing references and delegates the numbering rule to
  * the pure helper. Concurrent posts can still pick the same number;
- * createShipmentAction retries on the unique conflict.
+ * createSaleAction retries on the unique conflict.
  */
 async function nextReferenceForTenant(
   tx: Prisma.TransactionClient,
   tenantId: string,
 ): Promise<string> {
-  const rows = await tx.shipment.findMany({
+  const rows = await tx.sale.findMany({
     where: { tenantId },
     select: { reference: true },
   });
-  return nextShipmentReference(rows.map((row) => row.reference));
+  return nextSaleReference(rows.map((row) => row.reference));
 }
 
 function isReferenceConflict(error: unknown): boolean {
@@ -60,15 +60,15 @@ function isReferenceConflict(error: unknown): boolean {
   return Array.isArray(target) ? target.includes("reference") : true;
 }
 
-export async function createShipmentAction(
-  input: CreateShipmentInput,
-): Promise<CreateShipmentResult> {
+export async function createSaleAction(
+  input: CreateSaleInput,
+): Promise<CreateSaleResult> {
   const session = await requireSession();
   const tenantId = session.tenant.id;
 
-  const parsed = shipmentSchema.safeParse(input);
+  const parsed = saleSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid shipment." };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid sale." };
   }
 
   const data = parsed.data;
@@ -79,7 +79,7 @@ export async function createShipmentAction(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
-      const shipmentId = await prisma.$transaction(
+      const saleId = await prisma.$transaction(
         async (tx) => {
           const level = await tx.tradingPostLevel.findUnique({
             where: { tenantId_level: { tenantId, level: data.level } },
@@ -107,7 +107,7 @@ export async function createShipmentAction(
             };
           });
 
-          const planned = planShipment(planLines, {
+          const planned = planSale(planLines, {
             level: level.level,
             maxCargoValue: toNumber(level.maxCargoValue),
             taxRateBps: level.taxRateBps,
@@ -137,7 +137,7 @@ export async function createShipmentAction(
 
           const reference = await nextReferenceForTenant(tx, tenantId);
 
-          const shipment = await tx.shipment.create({
+          const sale = await tx.sale.create({
             data: {
               tenantId,
               reference,
@@ -156,9 +156,9 @@ export async function createShipmentAction(
             const resource = resourceMap.get(line.resourceId)!;
             const lineTotal = line.quantity * line.unitPrice;
 
-            const createdLine = await tx.shipmentLine.create({
+            const createdLine = await tx.saleLine.create({
               data: {
-                shipmentId: shipment.id,
+                saleId: sale.id,
                 resourceId: line.resourceId,
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
@@ -195,8 +195,8 @@ export async function createShipmentAction(
 
               await tx.lotConsumption.create({
                 data: {
-                  shipmentId: shipment.id,
-                  shipmentLineId: createdLine.id,
+                  saleId: sale.id,
+                  saleLineId: createdLine.id,
                   lotId: lot.id,
                   supplierId: lot.supplierId,
                   quantity: take,
@@ -220,7 +220,7 @@ export async function createShipmentAction(
           for (const trip of plan.trips) {
             const createdTrip = await tx.trip.create({
               data: {
-                shipmentId: shipment.id,
+                saleId: sale.id,
                 seq: trip.seq,
                 level: trip.level,
                 capacity: trip.capacity,
@@ -252,16 +252,16 @@ export async function createShipmentAction(
                 supplierId,
                 type: "credit",
                 amount,
-                refType: "shipment",
-                refId: shipment.id,
+                refType: "sale",
+                refId: sale.id,
                 occurredAt: soldAt,
-                note: `Shipment ${reference}`,
+                note: `Sale ${reference}`,
               },
             });
           }
 
-          await tx.shipment.update({
-            where: { id: shipment.id },
+          await tx.sale.update({
+            where: { id: sale.id },
             data: {
               status: "posted",
               postedAt: new Date(),
@@ -275,54 +275,54 @@ export async function createShipmentAction(
           await logAudit(tx, {
             tenantId,
             userId: session.user.id,
-            action: "shipment.posted",
-            entity: "shipment",
-            entityId: shipment.id,
+            action: "sale.posted",
+            entity: "sale",
+            entityId: sale.id,
             detail: `${reference} · ${data.customerName} · gross ${plan.gross} · tax ${plan.tax} · net ${plan.net}`,
           });
 
-          return shipment.id;
+          return sale.id;
         },
         { timeout: 20_000 },
       );
 
       revalidatePath("/");
-      revalidatePath("/shipments");
+      revalidatePath("/sales");
       revalidatePath("/inventory");
       revalidatePath("/suppliers");
 
-      return { ok: true, id: shipmentId };
+      return { ok: true, id: saleId };
     } catch (error) {
       if (error instanceof ActionError) {
         return { ok: false, error: error.message };
       }
       if (isReferenceConflict(error) && attempt < MAX_ATTEMPTS) continue;
-      console.error("createShipmentAction", error);
-      return { ok: false, error: "Could not post the shipment. Please try again." };
+      console.error("createSaleAction", error);
+      return { ok: false, error: "Could not post the sale. Please try again." };
     }
   }
 
-  return { ok: false, error: "Could not post the shipment. Please try again." };
+  return { ok: false, error: "Could not post the sale. Please try again." };
 }
 
-export async function voidShipmentAction(formData: FormData): Promise<void> {
+export async function voidSaleAction(formData: FormData): Promise<void> {
   const session = await requireSession();
   const tenantId = session.tenant.id;
   const id = String(formData.get("id") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
 
-  if (!id) redirect("/shipments");
+  if (!id) redirect("/sales");
   if (reason.length < 3) {
-    redirect(`/shipments/${id}?error=${encodeURIComponent("Add a short reason for voiding.")}`);
+    redirect(`/sales/${id}?error=${encodeURIComponent("Add a short reason for voiding.")}`);
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const shipment = await tx.shipment.findFirst({ where: { id, tenantId } });
-    if (!shipment || shipment.status !== "posted") {
-      return { error: "Only posted shipments can be voided." as string | null };
+    const sale = await tx.sale.findFirst({ where: { id, tenantId } });
+    if (!sale || sale.status !== "posted") {
+      return { error: "Only posted sales can be voided." as string | null };
     }
 
-    const consumptions = await tx.lotConsumption.findMany({ where: { shipmentId: id } });
+    const consumptions = await tx.lotConsumption.findMany({ where: { saleId: id } });
     for (const consumption of consumptions) {
       await tx.lot.update({
         where: { id: consumption.lotId },
@@ -331,7 +331,7 @@ export async function voidShipmentAction(formData: FormData): Promise<void> {
     }
 
     const credits = await tx.supplierLedgerEntry.findMany({
-      where: { tenantId, refType: "shipment", refId: id, type: "credit" },
+      where: { tenantId, refType: "sale", refId: id, type: "credit" },
     });
     for (const credit of credits) {
       await tx.supplierLedgerEntry.create({
@@ -340,15 +340,15 @@ export async function voidShipmentAction(formData: FormData): Promise<void> {
           supplierId: credit.supplierId,
           type: "reversal",
           amount: -toNumber(credit.amount),
-          refType: "shipment",
+          refType: "sale",
           refId: id,
           occurredAt: new Date(),
-          note: `Voided ${shipment.reference}: ${reason}`,
+          note: `Voided ${sale.reference}: ${reason}`,
         },
       });
     }
 
-    await tx.shipment.update({
+    await tx.sale.update({
       where: { id },
       data: { status: "void", voidedAt: new Date(), voidReason: reason },
     });
@@ -356,8 +356,8 @@ export async function voidShipmentAction(formData: FormData): Promise<void> {
     await logAudit(tx, {
       tenantId,
       userId: session.user.id,
-      action: "shipment.voided",
-      entity: "shipment",
+      action: "sale.voided",
+      entity: "sale",
       entityId: id,
       detail: reason,
     });
@@ -366,26 +366,26 @@ export async function voidShipmentAction(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/");
-  revalidatePath("/shipments");
-  revalidatePath(`/shipments/${id}`);
+  revalidatePath("/sales");
+  revalidatePath(`/sales/${id}`);
   revalidatePath("/inventory");
   revalidatePath("/suppliers");
 
   if (result.error) {
-    redirect(`/shipments/${id}?error=${encodeURIComponent(result.error)}`);
+    redirect(`/sales/${id}?error=${encodeURIComponent(result.error)}`);
   }
-  redirect(`/shipments/${id}`);
+  redirect(`/sales/${id}`);
 }
 
 export async function deleteDraftAction(formData: FormData): Promise<void> {
   const session = await requireSession();
   const id = String(formData.get("id") ?? "");
-  if (!id) redirect("/shipments");
+  if (!id) redirect("/sales");
 
-  await prisma.shipment.deleteMany({
+  await prisma.sale.deleteMany({
     where: { id, tenantId: session.tenant.id, status: "draft" },
   });
 
-  revalidatePath("/shipments");
-  redirect("/shipments");
+  revalidatePath("/sales");
+  redirect("/sales");
 }

@@ -4,9 +4,9 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Package, Sparkles } from "lucide-react";
-import { createShipmentAction } from "@/actions/shipments";
+import { createSaleAction } from "@/actions/sales";
 import {
-  planShipment,
+  planSale,
   previewSupplierShares,
   type LevelRule,
   type PlanLine,
@@ -113,7 +113,7 @@ export function Planner({
 
   const planned = useMemo(() => {
     if (!levelRule) return null;
-    return planShipment(lines, levelRule);
+    return planSale(lines, levelRule);
   }, [lines, levelRule]);
 
   const stockProblems = useMemo(
@@ -169,7 +169,7 @@ export function Planner({
     if (!canSubmit) return;
     setError(null);
     startTransition(async () => {
-      const result = await createShipmentAction({
+      const result = await createSaleAction({
         customerName: customerName.trim(),
         soldAt,
         notes: notes.trim() || undefined,
@@ -185,7 +185,7 @@ export function Planner({
         setError(result.error);
         return;
       }
-      router.push(`/shipments/${result.id}`);
+      router.push(`/sales/${result.id}`);
       router.refresh();
     });
   }
@@ -196,7 +196,7 @@ export function Planner({
         <CardBody>
           <p className="text-sm font-medium">No trading post levels configured</p>
           <p className="mt-1 text-xs text-muted">
-            Add your level table before planning a shipment.
+            Add your level table before planning a sale.
           </p>
           <Link
             href="/settings#levels"
@@ -366,7 +366,7 @@ export function Planner({
         <Card className="overflow-hidden">
           <div className="border-b border-line bg-gradient-to-br from-accent/[0.09] to-transparent px-5 py-4">
             <p className="text-[11px] font-medium uppercase tracking-wider text-accent">
-              Shipment preview
+              Sale preview
             </p>
             <p className="num mt-1 text-2xl font-semibold text-ink">
               {plan ? money(net, currency) : "—"}
@@ -399,7 +399,7 @@ export function Planner({
 
             {viability >= 100 ? (
               <Alert tone="danger">
-                Tax plus supplier shares exceed the sale price. This shipment loses money — raise
+                Tax plus supplier shares exceed the sale price. This sale loses money — raise
                 the price or renegotiate the share.
               </Alert>
             ) : viability >= 90 ? (
@@ -430,9 +430,9 @@ export function Planner({
                 className="w-full"
                 disabled={!canSubmit}
                 onClick={submit}
-                data-action="post-shipment"
+                data-action="post-sale"
               >
-              {pending ? "Posting…" : "Confirm & post shipment"}
+              {pending ? "Posting…" : "Confirm & post sale"}
               {!pending ? <ArrowRight className="size-4" /> : null}
             </Button>
             <p className="text-center text-[10px] leading-relaxed text-faint">
