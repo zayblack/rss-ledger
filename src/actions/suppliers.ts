@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { requireLimit, EntitlementError } from "@/lib/entitlements";
 import { parseAmountInput, parsePercentInput } from "@/lib/money";
 import { parseDateInput } from "@/lib/format";
 
@@ -29,6 +30,15 @@ export async function createSupplierAction(
     where: { tenantId_name: { tenantId, name } },
   });
   if (existing) return { error: "A supplier with that name already exists." };
+
+  // Entitlement: supplier cap.
+  try {
+    const count = await prisma.supplier.count({ where: { tenantId, archived: false } });
+    requireLimit(session.tenant.plan, "suppliers", count);
+  } catch (err) {
+    if (err instanceof EntitlementError) return { error: err.message };
+    throw err;
+  }
 
   const supplier = await prisma.$transaction(async (tx) => {
     const created = await tx.supplier.create({

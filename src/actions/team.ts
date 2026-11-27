@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireOwner } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { requireLimit, EntitlementError } from "@/lib/entitlements";
 
 export type InviteState = {
   error?: string;
@@ -30,6 +31,15 @@ export async function createInviteAction(
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) return { error: "That email already has an account." };
+
+  // Entitlement: member cap.
+  try {
+    const count = await prisma.membership.count({ where: { tenantId } });
+    requireLimit(session.tenant.plan, "members", count);
+  } catch (err) {
+    if (err instanceof EntitlementError) return { error: err.message };
+    throw err;
+  }
 
   const existing = await prisma.invite.findFirst({
     where: { tenantId, email, status: "pending", expiresAt: { gt: new Date() } },

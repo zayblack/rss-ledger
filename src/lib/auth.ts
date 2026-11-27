@@ -10,7 +10,7 @@ const SESSION_DAYS = 30;
 
 export type SessionContext = {
   user: { id: string; email: string; name: string; isPlatformAdmin: boolean };
-  tenant: { id: string; name: string; currency: string };
+  tenant: { id: string; name: string; currency: string; plan: string };
   membership: { id: string; role: string };
   sessionId: string;
 };
@@ -88,6 +88,7 @@ export const getSession = cache(async (): Promise<SessionContext | null> => {
       id: membership.tenant.id,
       name: membership.tenant.name,
       currency: membership.tenant.currency,
+      plan: membership.tenant.plan,
     },
     membership: { id: membership.id, role: membership.role },
     sessionId: session.id,

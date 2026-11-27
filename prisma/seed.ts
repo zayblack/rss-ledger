@@ -27,7 +27,7 @@ async function main() {
     });
 
     const tenant = await tx.tenant.create({
-      data: { name: "My Trading Post", currency: "Credits" },
+      data: { name: "My Trading Post", currency: "Credits", plan: "premium", subscriptionStatus: "active" },
     });
 
     await tx.membership.create({

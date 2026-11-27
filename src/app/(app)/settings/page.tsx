@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { toNumber } from "@/lib/money";
-import { Alert, Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
+import { Alert, Card, CardBody, CardHeader, PageHeader, buttonClass } from "@/components/ui";
 import { LevelsEditor, PasswordForm, ResourceForm, WorkspaceForm } from "./forms";
 
 export const metadata = { title: "Settings" };
@@ -23,6 +24,11 @@ export default async function SettingsPage() {
       <PageHeader
         title="Settings"
         description="Configure the ledger to match your game and your deals."
+        actions={
+          <Link href="/settings/billing" className={buttonClass("secondary", "md")}>
+            Billing & plan
+          </Link>
+        }
       />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr] lg:items-start">

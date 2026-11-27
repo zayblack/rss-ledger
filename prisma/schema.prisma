@@ -33,10 +33,21 @@ model User {
 }
 
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  currency  String   @default("Credits")
-  createdAt DateTime @default(now())
+  id                    String    @id @default(cuid())
+  name                  String
+  currency              String    @default("Credits")
+  createdAt             DateTime  @default(now())
+
+  // Billing / entitlements
+  plan                  String    @default("basic") // basic | mid | premium
+  subscriptionStatus    String    @default("active") // active | trialing | past_due | canceled
+  subscriptionExpiresAt DateTime?
+  billingProvider       String? // paymongo | paddle | lemon
+  billingCustomerId     String?
+  billingSubscriptionId String?
+  salesThisMonth        Int       @default(0)
+  monthResetAt          DateTime?
+  purgeAfter            DateTime? // premium data retained until this date after downgrade
 
   memberships Membership[]
   resources   Resource[]

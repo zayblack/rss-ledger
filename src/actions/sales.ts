@@ -7,6 +7,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { planSale, type PlanLine } from "@/lib/calc";
+import { requireLimit, EntitlementError } from "@/lib/entitlements";
 import { nextSaleReference } from "@/lib/references";
 import { floorBps, toNumber } from "@/lib/money";
 import { logAudit } from "@/lib/audit";
@@ -74,6 +75,26 @@ export async function createSaleAction(
   const data = parsed.data;
   const soldAt = parseDateInput(data.soldAt);
   if (!soldAt) return { ok: false, error: "Choose a valid sale date." };
+
+  // Entitlement: monthly sale cap (basic tier).
+  try {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { plan: true, salesThisMonth: true, monthResetAt: true },
+    });
+    const now = new Date();
+    let count = tenant?.salesThisMonth ?? 0;
+    if (tenant?.monthResetAt && tenant.monthResetAt.getTime() <= now.getTime()) {
+      // reset window passed; treat as 0 for this check, will persist on success
+      count = 0;
+    }
+    requireLimit(tenant?.plan ?? "basic", "salesPerMonth", count);
+  } catch (err) {
+    if (err instanceof EntitlementError) {
+      return { ok: false, error: err.message };
+    }
+    throw err;
+  }
 
   const MAX_ATTEMPTS = 3;
 
@@ -269,6 +290,17 @@ export async function createSaleAction(
               taxTotal: plan.tax,
               netTotal: plan.net,
               supplierShareTotal,
+            },
+          });
+
+          // Meter usage for the billing period.
+          const now = new Date();
+          const resetAt = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+          await tx.tenant.update({
+            where: { id: tenantId },
+            data: {
+              salesThisMonth: { increment: 1 },
+              monthResetAt: resetAt,
             },
           });
 
