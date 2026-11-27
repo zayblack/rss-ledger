@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CreditCard, Sparkles } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { createCheckoutAction } from "@/actions/billing";
 import { toNumber } from "@/lib/money";
 import {
   entitlementsFor,
@@ -11,6 +12,7 @@ import {
   PLAN_FEATURES,
 } from "@/lib/entitlements";
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -23,7 +25,12 @@ import {
 
 export const metadata = { title: "Billing" };
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; success?: string; canceled?: string; plan?: string }>;
+}) {
+  const sp = await searchParams;
   const session = await requireSession();
   const tenantId = session.tenant.id;
 
@@ -60,6 +67,24 @@ export default async function BillingPage() {
           </Link>
         }
       />
+
+      {sp.error ? (
+        <Alert tone="danger" className="mb-4">
+          {sp.error === "checkout-failed"
+            ? "Could not start checkout. Please try again."
+            : "Something went wrong."}
+        </Alert>
+      ) : null}
+      {sp.canceled ? (
+        <Alert tone="warn" className="mb-4">
+          Checkout canceled. No changes were made.
+        </Alert>
+      ) : null}
+      {sp.success ? (
+        <Alert tone="success" className="mb-4">
+          Payment received. Your plan will update shortly.
+        </Alert>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card>
@@ -174,9 +199,12 @@ export default async function BillingPage() {
                     </li>
                   </ul>
                   {!isCurrent && p !== "basic" ? (
-                    <Button variant="secondary" size="sm" className="mt-3 w-full">
-                      <CreditCard className="size-3.5" /> Choose {planLabel(p)}
-                    </Button>
+                    <form action={createCheckoutAction} className="mt-3">
+                      <input type="hidden" name="plan" value={p} />
+                      <Button type="submit" variant="secondary" size="sm" className="w-full">
+                        <CreditCard className="size-3.5" /> Choose {planLabel(p)}
+                      </Button>
+                    </form>
                   ) : null}
                 </div>
               );
