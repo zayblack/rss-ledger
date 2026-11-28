@@ -1,5 +1,5 @@
 {
-  "name": "Stocks Ledger",
+  "name": "StockLedger",
   "short_name": "Ledger",
   "description": "Track stock, sales, and supplier payables.",
   "start_url": "/",

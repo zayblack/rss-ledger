@@ -49,7 +49,7 @@ async function main() {
   });
 
   console.log("");
-  console.log("  Stocks Ledger is ready.");
+  console.log("  StockLedger is ready.");
   console.log(`  Sign in: ${OWNER_EMAIL}`);
   console.log(`  Password: ${OWNER_PASSWORD}`);
   console.log("");

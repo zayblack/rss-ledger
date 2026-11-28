@@ -1,4 +1,4 @@
-# Stocks Ledger
+# StockLedger
 
 A private, multi-tenant web app for sellers of in-game resources: track stock in
 supplier-attributed lots, plan and post shipments with transport tax, attribute
