@@ -1,4 +1,4 @@
-// Resource Ledger — data model
+// Stocks Ledger — data model
 //
 // Design notes:
 // - Every business row carries tenantId. Isolation is enforced in the data layer.

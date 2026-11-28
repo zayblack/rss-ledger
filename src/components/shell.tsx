@@ -56,7 +56,7 @@ function Brand({ tenantName }: { tenantName: string }) {
       </span>
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold tracking-tight text-ink">
-          Resource Ledger
+          Stocks Ledger
         </span>
         <span className="block truncate text-[11px] text-faint">{tenantName}</span>
       </span>

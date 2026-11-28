@@ -27,7 +27,7 @@ export default async function AcceptInvitePage({
           <span className="grid size-9 place-items-center rounded-lg border border-accent/30 bg-accent/15 text-accent">
             <Boxes className="size-5" />
           </span>
-          <span className="text-sm font-semibold tracking-tight">Resource Ledger</span>
+          <span className="text-sm font-semibold tracking-tight">Stocks Ledger</span>
         </div>
 
         <div className="rounded-2xl border border-line bg-surface/80 p-6 shadow-2xl shadow-black/40">

@@ -1,5 +1,5 @@
 {
-  "name": "resource-ledger",
+  "name": "stocks-ledger",
   "version": "0.1.0",
   "private": true,
   "scripts": {

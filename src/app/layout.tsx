@@ -3,8 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Resource Ledger",
-    template: "%s · Resource Ledger",
+    default: "Stocks Ledger",
+    template: "%s · Stocks Ledger",
   },
   description:
     "Track stock, sales, transport tax and supplier payouts for in-game resource trading.",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Resource Ledger",
+    title: "Stocks Ledger",
   },
 };
 

@@ -16,7 +16,7 @@ export default async function LoginPage() {
           <span className="grid size-9 place-items-center rounded-lg border border-accent/30 bg-accent/15 text-accent">
             <Boxes className="size-5" />
           </span>
-          <span className="text-sm font-semibold tracking-tight">Resource Ledger</span>
+          <span className="text-sm font-semibold tracking-tight">Stocks Ledger</span>
         </div>
 
         <div className="max-w-md">
@@ -59,7 +59,7 @@ export default async function LoginPage() {
             <span className="grid size-9 place-items-center rounded-lg border border-accent/30 bg-accent/15 text-accent">
               <Boxes className="size-5" />
             </span>
-            <span className="text-sm font-semibold tracking-tight">Resource Ledger</span>
+            <span className="text-sm font-semibold tracking-tight">Stocks Ledger</span>
           </div>
 
           <h2 className="text-xl font-semibold tracking-tight">Sign in</h2>
