@@ -3,7 +3,7 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { toNumber } from "@/lib/money";
 import { Alert, Card, CardBody, CardHeader, PageHeader, buttonClass } from "@/components/ui";
-import { LevelsEditor, PasswordForm, ResourceForm, WorkspaceForm } from "./forms";
+import { LevelsEditor, PasswordForm, ResourceForm, ThemeForm, WorkspaceForm } from "./forms";
 
 export const metadata = { title: "Settings" };
 
@@ -61,6 +61,17 @@ export default async function SettingsPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.4fr] lg:items-start">
+        <Card>
+          <CardHeader title="Appearance" subtitle="Color theme for this workspace." />
+          <CardBody className="pt-3">
+            <ThemeForm
+              plan={session.tenant.plan}
+              currentTheme={session.tenant.theme}
+              currentAccent={session.tenant.themeAccent}
+            />
+          </CardBody>
+        </Card>
+
         <Card>
           <CardHeader
             title="Security"

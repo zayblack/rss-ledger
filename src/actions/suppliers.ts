@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSession, requireManager } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { requireLimit, EntitlementError } from "@/lib/entitlements";
 import { parseAmountInput, parsePercentInput } from "@/lib/money";
@@ -209,12 +209,36 @@ export async function voidPaymentAction(formData: FormData): Promise<void> {
 }
 
 export async function toggleSupplierArchiveAction(formData: FormData): Promise<void> {
-  const session = await requireSession();
+  const session = await requireManager();
+  const tenantId = session.tenant.id;
   const id = String(formData.get("id") ?? "");
   const supplier = await prisma.supplier.findFirst({
-    where: { id, tenantId: session.tenant.id },
+    where: { id, tenantId },
   });
   if (!supplier) redirect("/suppliers");
+
+  // Guard: don't archive a supplier that still has stock or an outstanding balance.
+  if (!supplier.archived) {
+    const [balanceRow, stockRow] = await Promise.all([
+      prisma.supplierLedgerEntry.aggregate({
+        where: { tenantId, supplierId: id },
+        _sum: { amount: true },
+      }),
+      prisma.lot.aggregate({
+        where: { tenantId, supplierId: id },
+        _sum: { quantityRemaining: true },
+      }),
+    ]);
+    const balance = Number(balanceRow._sum.amount ?? 0n);
+    const stock = Number(stockRow._sum.quantityRemaining ?? 0n);
+    if (balance !== 0 || stock > 0) {
+      redirect(
+        `/suppliers/${id}?error=${encodeURIComponent(
+          `Cannot archive ${supplier.name}: outstanding balance or stock remains. Settle and sell through first.`,
+        )}`,
+      );
+    }
+  }
 
   await prisma.supplier.update({
     where: { id },

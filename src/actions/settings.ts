@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { hashPassword, requireSession, verifyPassword } from "@/lib/auth";
+import { hashPassword, requireSession, requireManager, verifyPassword } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { parseAmountInput, parsePercentInput } from "@/lib/money";
+import { themeTierOk } from "@/lib/themes";
 
 export type FormState = { error?: string; success?: string };
 
@@ -126,7 +127,7 @@ export async function saveLevelsAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const session = await requireSession();
+  const session = await requireManager();
   const tenantId = session.tenant.id;
   const raw = String(formData.get("rows") ?? "");
 
@@ -199,6 +200,39 @@ export async function saveLevelsAction(
   revalidatePath("/settings");
   revalidatePath("/sales/new");
   return { success: `Saved ${rows.length} trading post levels.` };
+}
+
+export async function updateThemeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const session = await requireSession();
+  const tenantId = session.tenant.id;
+  const theme = String(formData.get("theme") ?? "").trim();
+  const customAccent = String(formData.get("customAccent") ?? "").trim() || null;
+
+  const allowedThemes = ["light", "dark", "red", "orange", "yellow", "green", "blue", "indigo", "violet", "custom"];
+  if (!allowedThemes.includes(theme)) return { error: "Unknown theme." };
+
+  if (!themeTierOk(session.tenant.plan, theme as any)) {
+    return { error: "This theme requires a higher plan." };
+  }
+
+  if (theme === "custom") {
+    if (session.tenant.plan !== "premium") return { error: "Custom themes require Premium." };
+    if (!customAccent || !/^#[0-9a-fA-F]{6}$/.test(customAccent)) {
+      return { error: "Enter a valid hex color (e.g. #37d6a0)." };
+    }
+  }
+
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: { theme, themeAccent: theme === "custom" ? customAccent : null },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/settings");
+  return { success: "Theme updated." };
 }
 
 export async function loadDemoDataAction(): Promise<void> {

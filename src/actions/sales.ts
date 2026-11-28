@@ -5,12 +5,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSession, requireManager } from "@/lib/auth";
 import { planSale, type PlanLine } from "@/lib/calc";
 import { requireLimit, EntitlementError } from "@/lib/entitlements";
 import { nextSaleReference } from "@/lib/references";
 import { floorBps, toNumber } from "@/lib/money";
 import { logAudit } from "@/lib/audit";
+import { notify } from "@/lib/notifications";
 import { parseDateInput } from "@/lib/format";
 
 class ActionError extends Error {}
@@ -77,6 +78,8 @@ export async function createSaleAction(
   if (!soldAt) return { ok: false, error: "Choose a valid sale date." };
 
   // Entitlement: monthly sale cap (basic tier).
+  let monthResetPassed = false;
+  let existingMonthResetAt: Date | null = null;
   try {
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -85,9 +88,11 @@ export async function createSaleAction(
     const now = new Date();
     let count = tenant?.salesThisMonth ?? 0;
     if (tenant?.monthResetAt && tenant.monthResetAt.getTime() <= now.getTime()) {
-      // reset window passed; treat as 0 for this check, will persist on success
+      // reset window passed; treat as 0 for this check, persist reset on success
+      monthResetPassed = true;
       count = 0;
     }
+    existingMonthResetAt = tenant?.monthResetAt ?? null;
     requireLimit(tenant?.plan ?? "basic", "salesPerMonth", count);
   } catch (err) {
     if (err instanceof EntitlementError) {
@@ -295,11 +300,14 @@ export async function createSaleAction(
 
           // Meter usage for the billing period.
           const now = new Date();
-          const resetAt = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+          const resetAt =
+            existingMonthResetAt && existingMonthResetAt.getTime() > now.getTime()
+              ? existingMonthResetAt
+              : new Date(now.getFullYear(), now.getMonth() + 1, 1);
           await tx.tenant.update({
             where: { id: tenantId },
             data: {
-              salesThisMonth: { increment: 1 },
+              salesThisMonth: monthResetPassed ? 1 : { increment: 1 },
               monthResetAt: resetAt,
             },
           });
@@ -313,6 +321,54 @@ export async function createSaleAction(
             detail: `${reference} · ${data.customerName} · gross ${plan.gross} · tax ${plan.tax} · net ${plan.net}`,
           });
 
+          // Low-stock notifications.
+          const remainingRows = await tx.lot.groupBy({
+            by: ["resourceId"],
+            where: { tenantId },
+            _sum: { quantityRemaining: true },
+          });
+          const remainingMap = new Map(
+            remainingRows.map((row) => [row.resourceId, toNumber(row._sum.quantityRemaining)]),
+          );
+          for (const resource of resourceMap.values()) {
+            const remaining = remainingMap.get(resource.id) ?? 0;
+            const threshold = toNumber(resource.lowStockThreshold);
+            if (threshold > 0 && remaining <= threshold) {
+              // Avoid spamming duplicate unread alerts for the same resource.
+              const existing = await tx.notification.findFirst({
+                where: {
+                  tenantId,
+                  type: "low_stock",
+                  title: `Low stock: ${resource.name}`,
+                  readAt: null,
+                },
+              });
+              if (existing) continue;
+              await notify(
+                {
+                  tenantId,
+                  userId: null,
+                  type: "low_stock",
+                  title: `Low stock: ${resource.name}`,
+                  body: `${remaining} ${resource.unitLabel} remaining (threshold ${threshold}).`,
+                },
+                tx,
+              );
+            } else if (threshold > 0 && remaining > threshold) {
+              // Stock recovered above threshold: clear any stale unread alert so a
+              // future dip can notify again.
+              await tx.notification.updateMany({
+                where: {
+                  tenantId,
+                  type: "low_stock",
+                  title: `Low stock: ${resource.name}`,
+                  readAt: null,
+                },
+                data: { readAt: new Date() },
+              });
+            }
+          }
+
           return sale.id;
         },
         { timeout: 20_000 },
@@ -322,6 +378,7 @@ export async function createSaleAction(
       revalidatePath("/sales");
       revalidatePath("/inventory");
       revalidatePath("/suppliers");
+      revalidatePath("/notifications");
 
       return { ok: true, id: saleId };
     } catch (error) {
@@ -338,7 +395,7 @@ export async function createSaleAction(
 }
 
 export async function voidSaleAction(formData: FormData): Promise<void> {
-  const session = await requireSession();
+  const session = await requireManager();
   const tenantId = session.tenant.id;
   const id = String(formData.get("id") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
@@ -384,6 +441,25 @@ export async function voidSaleAction(formData: FormData): Promise<void> {
       where: { id },
       data: { status: "void", voidedAt: new Date(), voidReason: reason },
     });
+
+    // Voided sales no longer count toward the monthly cap.
+    const now = new Date();
+    if (
+      sale.postedAt &&
+      sale.postedAt.getUTCFullYear() === now.getUTCFullYear() &&
+      sale.postedAt.getUTCMonth() === now.getUTCMonth()
+    ) {
+      const tenant = await tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { salesThisMonth: true },
+      });
+      if (tenant && tenant.salesThisMonth > 0) {
+        await tx.tenant.update({
+          where: { id: tenantId },
+          data: { salesThisMonth: { decrement: 1 } },
+        });
+      }
+    }
 
     await logAudit(tx, {
       tenantId,

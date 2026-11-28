@@ -30,6 +30,7 @@ model User {
   sessions        Session[]
   invitesSent     Invite[]     @relation("InviteSender")
   invitesAccepted Invite[]     @relation("InviteAcceptor")
+  notifications   Notification[]
 }
 
 model Tenant {
@@ -49,6 +50,10 @@ model Tenant {
   monthResetAt          DateTime?
   purgeAfter            DateTime? // premium data retained until this date after downgrade
 
+  // Theming
+  theme                 String    @default("dark") // light | dark | red | orange | ... | custom
+  themeAccent           String? // hex color for premium custom theme
+
   memberships Membership[]
   resources   Resource[]
   suppliers   Supplier[]
@@ -60,13 +65,14 @@ model Tenant {
   payments    Payment[]
   invites     Invite[]
   auditLogs   AuditLog[]
+  notifications Notification[]
 }
 
 model Membership {
   id        String   @id @default(cuid())
   userId    String
   tenantId  String
-  role      String   @default("seller") // owner | seller
+  role      String   @default("seller") // owner | manager | seller
   createdAt DateTime @default(now())
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -128,6 +134,7 @@ model Supplier {
   contact    String?
   notes      String?
   archived   Boolean  @default(false)
+  isSystem   Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -361,4 +368,21 @@ model AuditLog {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  type      String
+  title     String
+  body      String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([userId, readAt])
 }

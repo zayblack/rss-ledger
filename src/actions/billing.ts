@@ -14,15 +14,20 @@ export async function createCheckoutAction(formData: FormData): Promise<void> {
     redirect("/settings/billing?error=invalid-plan");
   }
 
+  let checkoutUrl: string;
   try {
     const checkout = await createPaymongoCheckoutSession({ tenantId, plan });
     await prisma.tenant.update({
       where: { id: tenantId },
       data: { billingProvider: "paymongo", billingSubscriptionId: checkout.id },
     });
-    redirect(checkout.checkoutUrl);
+    checkoutUrl = checkout.checkoutUrl;
   } catch (err) {
     console.error("createCheckoutAction", err);
     redirect("/settings/billing?error=checkout-failed");
   }
+
+  // Must stay outside the try: redirect() throws NEXT_REDIRECT, which the
+  // catch above would otherwise swallow.
+  redirect(checkoutUrl);
 }

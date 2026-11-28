@@ -29,8 +29,8 @@ export async function recordDeliveryAction(
   if (!receivedAt) return { error: "Choose a valid delivery date." };
 
   const [supplier, resource] = await Promise.all([
-    prisma.supplier.findFirst({ where: { id: supplierId, tenantId } }),
-    prisma.resource.findFirst({ where: { id: resourceId, tenantId } }),
+    prisma.supplier.findFirst({ where: { id: supplierId, tenantId, archived: false } }),
+    prisma.resource.findFirst({ where: { id: resourceId, tenantId, archived: false } }),
   ]);
 
   if (!supplier) return { error: "Supplier not found." };

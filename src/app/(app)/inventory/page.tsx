@@ -21,6 +21,7 @@ import {
   buttonClass,
 } from "@/components/ui";
 import { DeliveryForm } from "./delivery-form";
+import { AdjustmentForm } from "./adjustment-form";
 
 export const metadata = { title: "Inventory" };
 
@@ -172,6 +173,15 @@ export default async function InventoryPage({
                 currency={currency}
               />
             )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader title="Stock adjustment" subtitle="Manual corrections (damage, recount, loss)." />
+          <CardBody className="pt-3">
+            <AdjustmentForm
+              resources={resources.map((r) => ({ id: r.id, name: r.name, unitLabel: r.unitLabel }))}
+            />
           </CardBody>
         </Card>
 

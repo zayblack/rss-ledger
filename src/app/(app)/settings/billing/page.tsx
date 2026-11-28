@@ -34,12 +34,11 @@ export default async function BillingPage({
   const session = await requireSession();
   const tenantId = session.tenant.id;
 
-  const [tenant, resourceCount, supplierCount, memberCount, saleCount] = await Promise.all([
+  const [tenant, resourceCount, supplierCount, memberCount] = await Promise.all([
     prisma.tenant.findUnique({ where: { id: tenantId } }),
     prisma.resource.count({ where: { tenantId, archived: false } }),
     prisma.supplier.count({ where: { tenantId, archived: false } }),
     prisma.membership.count({ where: { tenantId } }),
-    prisma.sale.count({ where: { tenantId } }),
   ]);
 
   if (!tenant) return null;
@@ -51,7 +50,7 @@ export default async function BillingPage({
     { label: "Resources", current: resourceCount, limit: ent.limits.resources },
     { label: "Suppliers", current: supplierCount, limit: ent.limits.suppliers },
     { label: "Members", current: memberCount, limit: ent.limits.members },
-    { label: "Sales (all time)", current: saleCount, limit: ent.limits.salesPerMonth },
+    { label: "Sales (this month)", current: tenant.salesThisMonth, limit: ent.limits.salesPerMonth },
   ];
 
   const featureList = Object.entries(PLAN_FEATURES[ent.plan]) as [string, boolean][];
@@ -105,9 +104,12 @@ export default async function BillingPage({
                 </p>
               </div>
               {next ? (
-                <Button variant="primary" size="sm">
-                  <Sparkles className="size-3.5" /> Upgrade to {planLabel(next)}
-                </Button>
+                <form action={createCheckoutAction}>
+                  <input type="hidden" name="plan" value={next} />
+                  <Button type="submit" variant="primary" size="sm">
+                    <Sparkles className="size-3.5" /> Upgrade to {planLabel(next)}
+                  </Button>
+                </form>
               ) : (
                 <Badge tone="success">Top tier</Badge>
               )}

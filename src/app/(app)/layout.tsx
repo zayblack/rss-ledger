@@ -11,6 +11,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       userName={session.user.name}
       userEmail={session.user.email}
       role={session.membership.role}
+      theme={session.tenant.theme}
+      themeAccent={session.tenant.themeAccent}
     >
       {children}
     </Shell>

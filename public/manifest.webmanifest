@@ -1,0 +1,12 @@
+{
+  "name": "Resource Ledger",
+  "short_name": "Ledger",
+  "description": "Track stock, sales, and supplier payables.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070a0e",
+  "theme_color": "#37d6a0",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

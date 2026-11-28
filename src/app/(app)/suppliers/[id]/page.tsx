@@ -28,38 +28,52 @@ export const metadata = { title: "Supplier" };
 
 export default async function SupplierDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const session = await requireSession();
   const tenantId = session.tenant.id;
   const currency = session.tenant.currency;
   const { id } = await params;
+  const { error } = await searchParams;
 
   const supplier = await prisma.supplier.findFirst({ where: { id, tenantId } });
   if (!supplier) notFound();
 
-  const [deliveries, ledger, consumptions, payments] = await Promise.all([
-    prisma.delivery.findMany({
-      where: { tenantId, supplierId: id },
-      include: { resource: true },
-      orderBy: [{ receivedAt: "desc" }, { createdAt: "desc" }],
-      take: 50,
-    }),
-    prisma.supplierLedgerEntry.findMany({
-      where: { tenantId, supplierId: id },
-      orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
-      take: 100,
-    }),
-    prisma.lotConsumption.findMany({
-      where: { supplierId: id, sale: { tenantId, status: "posted" } },
-      include: { sale: true },
-    }),
-    prisma.payment.findMany({
-      where: { tenantId, supplierId: id },
-      select: { id: true, voidedAt: true },
-    }),
-  ]);
+  const [deliveries, ledger, consumptions, payments, ledgerTotals, deliveryTotals] =
+    await Promise.all([
+      prisma.delivery.findMany({
+        where: { tenantId, supplierId: id },
+        include: { resource: true },
+        orderBy: [{ receivedAt: "desc" }, { createdAt: "desc" }],
+        take: 50,
+      }),
+      prisma.supplierLedgerEntry.findMany({
+        where: { tenantId, supplierId: id },
+        orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+        take: 100,
+      }),
+      prisma.lotConsumption.findMany({
+        where: { supplierId: id, sale: { tenantId, status: "posted" } },
+        include: { sale: true },
+      }),
+      prisma.payment.findMany({
+        where: { tenantId, supplierId: id },
+        select: { id: true, voidedAt: true },
+      }),
+      // Totals must cover every row, not just the page shown below.
+      prisma.supplierLedgerEntry.groupBy({
+        by: ["type", "refType"],
+        where: { tenantId, supplierId: id },
+        _sum: { amount: true },
+      }),
+      prisma.delivery.aggregate({
+        where: { tenantId, supplierId: id },
+        _sum: { quantity: true },
+      }),
+    ]);
 
   const voidedPayments = new Set(
     payments.filter((payment) => payment.voidedAt).map((payment) => payment.id),
@@ -68,16 +82,16 @@ export default async function SupplierDetailPage({
   let earned = 0;
   let paid = 0;
   let balance = 0;
-  for (const entry of ledger) {
-    const amount = toNumber(entry.amount);
+  for (const row of ledgerTotals) {
+    const amount = toNumber(row._sum.amount);
     balance += amount;
-    if (entry.type === "credit") earned += amount;
-    else if (entry.type === "reversal" && entry.refType === "sale") earned += amount;
-    else if (entry.type === "payment") paid += -amount;
-    else if (entry.type === "reversal" && entry.refType === "payment") paid -= amount;
+    if (row.type === "credit") earned += amount;
+    else if (row.type === "reversal" && row.refType === "sale") earned += amount;
+    else if (row.type === "payment") paid += -amount;
+    else if (row.type === "reversal" && row.refType === "payment") paid -= amount;
   }
 
-  const unitsDelivered = deliveries.reduce((sum, delivery) => sum + toNumber(delivery.quantity), 0);
+  const unitsDelivered = toNumber(deliveryTotals._sum.quantity);
   const unitsSold = consumptions.reduce((sum, row) => sum + toNumber(row.quantity), 0);
   const grossAttributed = consumptions.reduce(
     (sum, row) => sum + toNumber(row.quantity) * toNumber(row.unitPrice),
@@ -98,6 +112,9 @@ export default async function SupplierDetailPage({
         }`}
         actions={
           <>
+            <Link href={`/suppliers/${id}/statement`} className={buttonClass("secondary", "md")}>
+              Statement
+            </Link>
             <Link href="/suppliers" className={buttonClass("ghost", "md")}>
               <ArrowLeft className="size-4" />
               Suppliers
@@ -121,6 +138,12 @@ export default async function SupplierDetailPage({
           </>
         }
       />
+
+      {error ? (
+        <Alert tone="danger" className="mb-4">
+          {error}
+        </Alert>
+      ) : null}
 
       {balance < 0 ? (
         <Alert tone="danger" className="mb-4">

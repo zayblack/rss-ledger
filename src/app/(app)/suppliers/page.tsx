@@ -26,7 +26,7 @@ export default async function SuppliersPage() {
 
   const [suppliers, balanceRows, soldRows] = await Promise.all([
     prisma.supplier.findMany({
-      where: { tenantId },
+      where: { tenantId, isSystem: false },
       orderBy: [{ archived: "asc" }, { name: "asc" }],
     }),
     prisma.supplierLedgerEntry.groupBy({

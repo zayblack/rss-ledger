@@ -6,20 +6,77 @@ import {
   changePasswordAction,
   saveLevelsAction,
   updateResourceAction,
+  updateThemeAction,
   updateWorkspaceAction,
   type FormState,
 } from "@/actions/settings";
+import { THEMES, themeTierOk } from "@/lib/themes";
 import {
   Alert,
   Button,
   Field,
   Input,
+  Select,
   Table,
   Td,
   Th,
   Tr,
   cn,
 } from "@/components/ui";
+
+export function ThemeForm({
+  plan,
+  currentTheme,
+  currentAccent,
+}: {
+  plan: string;
+  currentTheme: string;
+  currentAccent: string | null;
+}) {
+  const [state, formAction, pending] = useActionState<FormState, FormData>(
+    updateThemeAction,
+    {},
+  );
+
+  const allowed = THEMES.filter((t) => themeTierOk(plan, t.id));
+  const premium = plan === "premium";
+
+  return (
+    <form action={formAction} className="space-y-3">
+      {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
+      {state.success ? <Alert tone="success">{state.success}</Alert> : null}
+
+      <Field label="Theme">
+        <Select name="theme" defaultValue={currentTheme}>
+          {THEMES.map((t) => {
+            const ok = themeTierOk(plan, t.id);
+            return (
+              <option key={t.id} value={t.id} disabled={!ok}>
+                {t.label}
+                {!ok ? " (upgrade)" : ""}
+              </option>
+            );
+          })}
+          {premium ? <option value="custom">Custom (hex)</option> : null}
+        </Select>
+      </Field>
+
+      {premium ? (
+        <Field label="Custom accent color" hint="Premium only. Hex like #37d6a0.">
+          <Input name="customAccent" defaultValue={currentAccent ?? ""} placeholder="#37d6a0" maxLength={7} />
+        </Field>
+      ) : null}
+
+      <Button type="submit" variant="secondary" className="w-full" disabled={pending}>
+        {pending ? "Saving…" : "Apply theme"}
+      </Button>
+
+      <p className="text-[11px] text-faint">
+        Mid unlocks ROYGBIV accent themes. Premium adds a fully custom accent color.
+      </p>
+    </form>
+  );
+}
 
 export function WorkspaceForm({ name, currency }: { name: string; currency: string }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(

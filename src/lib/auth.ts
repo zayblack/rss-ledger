@@ -10,7 +10,7 @@ const SESSION_DAYS = 30;
 
 export type SessionContext = {
   user: { id: string; email: string; name: string; isPlatformAdmin: boolean };
-  tenant: { id: string; name: string; currency: string; plan: string };
+  tenant: { id: string; name: string; currency: string; plan: string; theme: string; themeAccent: string | null };
   membership: { id: string; role: string };
   sessionId: string;
 };
@@ -77,6 +77,23 @@ export const getSession = cache(async (): Promise<SessionContext | null> => {
   const membership = session.user.memberships[0];
   if (!membership) return null;
 
+  // Enforce subscription expiry: an expired paid plan reverts to basic.
+  let plan = membership.tenant.plan;
+  const expiresAt = membership.tenant.subscriptionExpiresAt;
+  if (expiresAt && expiresAt.getTime() < Date.now() && plan !== "basic") {
+    await prisma.tenant
+      .updateMany({
+        where: {
+          id: membership.tenant.id,
+          subscriptionExpiresAt: { lt: new Date() },
+          plan: { not: "basic" },
+        },
+        data: { plan: "basic", subscriptionStatus: "expired" },
+      })
+      .catch(() => undefined);
+    plan = "basic";
+  }
+
   return {
     user: {
       id: session.user.id,
@@ -88,7 +105,9 @@ export const getSession = cache(async (): Promise<SessionContext | null> => {
       id: membership.tenant.id,
       name: membership.tenant.name,
       currency: membership.tenant.currency,
-      plan: membership.tenant.plan,
+      plan,
+      theme: membership.tenant.theme,
+      themeAccent: membership.tenant.themeAccent,
     },
     membership: { id: membership.id, role: membership.role },
     sessionId: session.id,
@@ -104,5 +123,13 @@ export async function requireSession(): Promise<SessionContext> {
 export async function requireOwner(): Promise<SessionContext> {
   const session = await requireSession();
   if (session.membership.role !== "owner") redirect("/");
+  return session;
+}
+
+export async function requireManager(): Promise<SessionContext> {
+  const session = await requireSession();
+  if (session.membership.role !== "owner" && session.membership.role !== "manager") {
+    redirect("/");
+  }
   return session;
 }
